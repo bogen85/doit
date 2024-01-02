@@ -5,10 +5,7 @@ use std::fs::File;
 use std::io::Read;
 use std::process::exit;
 use std::process::Command;
-use toml_edit::Document;
-use toml_edit::Table;
-
-static SUB_COMMAND: &str = ".sub_command";
+use toml_edit::{Array, Document, Table};
 
 fn print_help() {
   println!("Usage: doit <command> [args...]");
@@ -58,25 +55,53 @@ fn print_alias_help(cmd_name: &str) {
   }
 }
 
+fn process_pre_post_cmd(which: &str, cmd_name: &str, sub_args: &Array) {
+  for (index, args_in) in sub_args.iter().enumerate() {
+    let args = {
+      let vec_in = args_in.as_array().expect("Value is not an array");
+      let mut vec: Vec<String> = Vec::new();
+      for arg in vec_in {
+        vec.push(arg.as_str().expect("Invalid argument").to_string());
+      }
+      vec
+    };
+
+    let cmd = args.get(0).expect("args is empty");
+    let cmd_args = if args.len() > 1 { &args[1..] } else { &[] };
+
+    println!("Runing command {}:{}:{}", cmd_name, which, index + 1);
+
+    let exit_status = {
+      let mut child = Command::new(&cmd)
+        .args(&*cmd_args)
+        .spawn()
+        .expect("Failed to execute command");
+      child.wait()
+    };
+    let rc = exit_status.expect("RC").code().unwrap_or(1);
+    if rc != 0 {
+      println!("Exit status: {}", rc);
+      exit(rc);
+    }
+  }
+}
+
 fn process_cmd(cmd_name: &str, table: &Table, additional_args: &[String]) {
   if table.contains_key("pre") {
-    println!("Runing {}.pre", cmd_name);
-    if let Some(sub_table) = table["pre"].as_table() {
-      process_cmd(cmd_name, &sub_table, &[]);
+    if let Some(args) = table["pre"].as_array() {
+      process_pre_post_cmd("pre", cmd_name, &args);
     }
   }
 
-  if cmd_name != SUB_COMMAND {
-    println!("Runing command {}", cmd_name);
-  }
+  println!("Runing command {}", cmd_name);
 
   let command = table["command"].as_str().expect("Missing command");
   let mut args = vec![command.to_string()];
 
-  let toml_args: toml_edit::Array = if table.contains_key("args") {
+  let toml_args: Array = if table.contains_key("args") {
     table["args"].as_array().expect("Array!").clone()
   } else {
-    toml_edit::Array::default()
+    Array::default()
   };
   for arg in toml_args {
     args.push(arg.as_str().expect("Invalid argument").to_string());
@@ -94,9 +119,8 @@ fn process_cmd(cmd_name: &str, table: &Table, additional_args: &[String]) {
 
   if rc == 0 {
     if table.contains_key("post") {
-      println!("Runing {}.post", cmd_name);
-      if let Some(sub_table) = table["post"].as_table() {
-        process_cmd(SUB_COMMAND, &sub_table, &[]);
+      if let Some(args) = table["post"].as_array() {
+        process_pre_post_cmd("post", cmd_name, &args);
       }
     }
   } else {

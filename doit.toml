@@ -3,7 +3,6 @@
 [install]
 command = "cargo"
 args = ["install",  "--path",  "."]
-
-[install.post]
-command = "bash"
-args = ["-c", "cp -fav ~/.cargo/bin/doit ~/bin/doit"]
+post = [
+    ["bash", "-c", "cp -fav ~/.cargo/bin/doit ~/bin/doit"],
+]
