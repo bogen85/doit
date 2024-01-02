@@ -1,7 +1,7 @@
 [source]
 
-[source.my-local-registry]
+[source.system-wide-registry]
 directory = "/usr/share/cargo/registry"
 
 [source.crates-io]
-replace-with = "my-local-registry"
+replace-with = "system-wide-registry"
