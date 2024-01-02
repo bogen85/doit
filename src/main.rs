@@ -14,38 +14,6 @@ fn read_doit_file() -> Document {
   contents.parse::<Document>().expect("Unable to parse TOML")
 }
 
-fn show_details(cmd_name: &str) {
-  let doc = read_doit_file();
-
-  if let Some(table) = doc[cmd_name].as_table() {
-    let command = table["command"].as_str().expect("Missing command");
-    let description = if table.contains_key("description") {
-      table["description"]
-        .as_str()
-        .unwrap_or("No description provided")
-    } else {
-      "No description provided"
-    };
-    let args = if table.contains_key("args") {
-      let toml_args = table["args"].as_array();
-      toml_args
-        .iter()
-        .map(|arg| arg.to_string())
-        .collect::<Vec<_>>()
-        .join(" ")
-    } else {
-      String::new()
-    };
-
-    println!("Alias: {}", cmd_name);
-    println!("Command: {}", command);
-    println!("Arguments:{}", args);
-    println!("Description: {}", description);
-  } else {
-    println!("Alias not found");
-  }
-}
-
 fn process_pre_post_cmd(which: &str, cmd_name: &str, table: &Table) {
   let sub_args = table[which]
     .as_array()
@@ -129,6 +97,18 @@ fn process_cmd(cmd_name: &str, table: &Table, additional_args: &[String]) {
   }
 }
 
+fn primary(cmd_name: &str, additional_args: &[String]) -> bool {
+  let doc = read_doit_file();
+  return if doc.contains_key(&cmd_name) {
+    if let Some(table) = doc[&cmd_name].as_table() {
+      process_cmd(&cmd_name, &table, &additional_args);
+    }
+    true
+  } else {
+    false
+  };
+}
+
 fn list_cmds() {
   for (i, (cmd, _)) in read_doit_file().as_table().iter().enumerate() {
     println!("{}: {}", i + 1, cmd);
@@ -147,17 +127,55 @@ fn print_about(program: &str) {
   println!("about: {}", env!("CARGO_PKG_DESCRIPTION"));
 }
 
-fn main() {
-  // Get package information from Cargo.toml using env! macros
+fn show_details(cmd_name: &str) -> bool {
+  let doc = read_doit_file();
 
+  if !doc.contains_key(cmd_name) {
+    return false;
+  }
+
+  if let Some(table) = doc[cmd_name].as_table() {
+    let command = table["command"].as_str().expect("Missing command");
+    let description = if table.contains_key("description") {
+      table["description"]
+        .as_str()
+        .unwrap_or("No description provided")
+    } else {
+      "No description provided"
+    };
+    let args = if table.contains_key("args") {
+      let toml_args = table["args"].as_array();
+      toml_args
+        .iter()
+        .map(|arg| arg.to_string())
+        .collect::<Vec<_>>()
+        .join(" ")
+    } else {
+      String::new()
+    };
+
+    println!("Alias: {}", cmd_name);
+    println!("Command: {}", command);
+    println!("Arguments:{}", args);
+    println!("Description: {}", description);
+  } else {
+    println!("Alias not found");
+  }
+  return true;
+}
+
+fn main() {
   let args: Vec<String> = env::args().collect();
   let program = args[0].clone();
 
-  let mut opts = Options::new();
-  opts.optflag("", "help", "print this help menu");
-  opts.optflag("", "cmds", "list all available commands");
-  opts.optflag("", "about", "about this program");
-  opts.optopt("", "show", "show details for command", "command");
+  let opts = {
+    let mut opts = Options::new();
+    opts.optflag("", "help", "print this help menu");
+    opts.optflag("", "cmds", "list all available commands");
+    opts.optflag("", "about", "about this program");
+    opts.optopt("", "show", "show details for command", "command");
+    opts
+  };
 
   let matches = match opts.parse(&args[1..]) {
     Ok(m) => m,
@@ -167,30 +185,31 @@ fn main() {
   };
 
   if matches.opt_present("help") {
-    print_usage(&program, opts);
-    return;
+    return print_usage(&program, opts);
   }
 
   if matches.opt_present("about") {
-    print_about(&program);
-    return;
+    return print_about(&program);
   }
 
   if let Some(cmd_name) = matches.opt_str("show") {
-    show_details(&cmd_name);
+    if !show_details(&cmd_name) {
+      println!("{} not found", cmd_name);
+      print_usage(&program, opts);
+      exit(1);
+    }
     return;
   }
 
   if matches.opt_present("cmds") {
-    list_cmds();
-    return;
+    return list_cmds();
   }
 
   let cmd_name = if !matches.free.is_empty() {
     matches.free[0].clone()
   } else {
     print_usage(&program, opts);
-    return;
+    exit(1);
   };
 
   let additional_args = if matches.free.len() > 1 {
@@ -198,14 +217,8 @@ fn main() {
   } else {
     vec![]
   };
-
-  let doc = read_doit_file();
-  if doc.contains_key(&cmd_name) {
-    if let Some(table) = doc[&cmd_name].as_table() {
-      process_cmd(&cmd_name, &table, &additional_args);
-    }
-  } else {
-    println!("command not found");
+  if !primary(&cmd_name, &additional_args) {
+    println!("{} not found", cmd_name);
     print_usage(&program, opts);
     exit(1);
   }
