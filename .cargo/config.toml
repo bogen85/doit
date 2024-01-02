@@ -1,0 +1,7 @@
+[source]
+
+[source.my-local-registry]
+directory = "/usr/share/cargo/registry"
+
+[source.crates-io]
+replace-with = "my-local-registry"
