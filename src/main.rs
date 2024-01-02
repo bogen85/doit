@@ -86,7 +86,7 @@ fn process_pre_post_cmd(which: &str, cmd_name: &str, table: &Table) {
 
     let exit_status = {
       let mut child = Command::new(&cmd).args(&*cmd_args).spawn().expect(&format!(
-        "Failed to execute command: {}:{:?}",
+        "Failed to execute sub command: {}:{:?}",
         cmd, cmd_args
       ));
       child.wait()

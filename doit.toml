@@ -6,3 +6,24 @@ args = ["install",  "--path",  "."]
 post = [
     ["bash", "-c", "cp -fav ~/.cargo/bin/doit ~/bin/doit"],
 ]
+
+[clear-dot-cargo]
+command = "bash"
+args = ["-c",  "rm -rf ~/.cargo"]
+pre = [
+    ["bash", "-c", "du -hs ~/.cargo"],
+]
+post = [
+    [
+      "bash", "-c",
+      '''
+        if [ -d ~/.cargo ]; then
+          file ~/.cargo
+          echo fail
+          exit 1
+        else
+          echo ok
+        fi
+      '''
+    ],
+]
