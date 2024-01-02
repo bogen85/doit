@@ -1,3 +1,5 @@
+# code: language=TOML insertSpaces=true tabSize=2
+
 [install]
 command = "cargo"
 args = ["install",  "--path",  "."]
