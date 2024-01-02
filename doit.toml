@@ -2,23 +2,21 @@
 
 [install]
 command = "cargo"
+exe = "bin/doit"
 args = ["install",  "--path",  "."]
-post = [
-    ["bash", "-c", "cp -fav ~/.cargo/bin/doit ~/bin/doit"],
-]
+post = [["bash", "-c", "cp -fav ~/.cargo/%exe% ~/%exe%"]]
 
 [clear-dot-cargo]
 command = "bash"
-args = ["-c",  "rm -rf ~/.cargo"]
-pre = [
-    ["bash", "-c", "du -hs ~/.cargo"],
-]
+dir = "~/.cargo"
+args = ["-c",  "rm -rf %dir%"]
+pre = [["bash", "-c", "du -hs %dir%"]]
 post = [
     [
       "bash", "-c",
       '''
-        if [ -d ~/.cargo ]; then
-          file ~/.cargo
+        if [ -d %dir% ]; then
+          file %dir%
           echo fail
           exit 1
         else

@@ -14,13 +14,29 @@ fn read_doit_file() -> Document {
   contents.parse::<Document>().expect("Unable to parse TOML")
 }
 
+const ASCII_SUB: &str = "\x1A";
+
+fn render_template(table: &Table, template: &str) -> String {
+  let mut result = template.to_string();
+
+  result = result.replace("%%", &ASCII_SUB);
+
+  for (key, value) in table.iter() {
+    if let Some(val) = value.as_str() {
+      let placeholder = format!("%{}%", key);
+      result = result.replace(&placeholder, val);
+    }
+  }
+  result.replace(&ASCII_SUB, "%%")
+}
+
 fn process_pre_post_cmd(which: &str, cmd_name: &str, table: &Table) {
   let sub_args = table[which]
     .as_array()
     .expect(&format!("{} is not an array", which));
 
   for (index, args_in) in sub_args.iter().enumerate() {
-    println!("Runing command {}:{}:{}", cmd_name, which, index + 1);
+    println!("Running command {}:{}:{}", cmd_name, which, index + 1);
 
     let args = {
       let vec_in = args_in
@@ -28,12 +44,13 @@ fn process_pre_post_cmd(which: &str, cmd_name: &str, table: &Table) {
         .expect(&format!("{}[{}] is not an array", which, index));
       let mut vec: Vec<String> = Vec::new();
       for arg in vec_in {
-        vec.push(
-          arg
+        vec.push(render_template(
+          table,
+          &arg
             .as_str()
             .expect(&format!("Invalid argument for {}:[{}]", which, index))
             .to_string(),
-        );
+        ));
       }
       vec
     };
@@ -62,22 +79,29 @@ fn process_cmd(cmd_name: &str, table: &Table, additional_args: &[String]) {
     process_pre_post_cmd("pre", cmd_name, &table);
   }
 
-  println!("Runing command {}", cmd_name);
+  println!("Running command {}", cmd_name);
 
   let command = table["command"]
     .as_str()
     .expect(&format!("{}: missing command", cmd_name));
-  let mut args = vec![command.to_string()];
 
-  let toml_args: Array = if table.contains_key("args") {
-    table["args"].as_array().expect("Array!").clone()
-  } else {
-    Array::default()
+  let args = {
+    let mut args = vec![command.to_string()];
+
+    let toml_args: Array = if table.contains_key("args") {
+      table["args"].as_array().expect("Array!").clone()
+    } else {
+      Array::default()
+    };
+    for arg in toml_args {
+      args.push(render_template(
+        table,
+        arg.as_str().expect("Invalid argument"),
+      ));
+    }
+    args.extend_from_slice(additional_args);
+    args
   };
-  for arg in toml_args {
-    args.push(arg.as_str().expect("Invalid argument").to_string());
-  }
-  args.extend_from_slice(additional_args);
 
   let exit_status = {
     let mut child = Command::new(&args[0])
@@ -147,7 +171,7 @@ fn show_details(cmd_name: &str) -> bool {
       let toml_args = table["args"].as_array();
       toml_args
         .iter()
-        .map(|arg| arg.to_string())
+        .map(|arg| render_template(table, &arg.to_string()))
         .collect::<Vec<_>>()
         .join(" ")
     } else {
