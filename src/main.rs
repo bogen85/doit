@@ -54,7 +54,14 @@ fn print_alias_help(alias: &str) {
   }
 }
 
-fn process_cmd(table: &Table, additional_args: &[String]) {
+fn process_cmd(alias: &str, table: &Table, additional_args: &[String]) {
+  if table.contains_key("pre") {
+    println!("Runing {}.pre", alias);
+    if let Some(sub_table) = table["pre"].as_table() {
+      process_cmd(alias, &sub_table, &[]);
+    }
+  }
+
   let command = table["command"].as_str().expect("Missing command");
   let mut args = vec![command.to_string()];
 
@@ -79,8 +86,9 @@ fn process_cmd(table: &Table, additional_args: &[String]) {
 
   if rc == 0 {
     if table.contains_key("post") {
+      println!("Runing {}.post", alias);
       if let Some(sub_table) = table["post"].as_table() {
-        process_cmd(&sub_table, &[]);
+        process_cmd(alias, &sub_table, &[]);
       }
     }
   } else {
@@ -108,7 +116,8 @@ fn main() {
   let doc = contents.parse::<Document>().expect("Unable to parse TOML");
   if doc.contains_key(alias) {
     if let Some(table) = doc[alias].as_table() {
-      process_cmd(&table, additional_args);
+      println!("Runing command {}", alias);
+      process_cmd(alias, &table, additional_args);
     }
   } else {
     println!("Alias not found");
