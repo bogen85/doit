@@ -1,17 +1,9 @@
 // code: language=Rust insertSpaces=true tabSize=2
 
-use std::env;
-use std::fs::File;
-use std::io::Read;
-use std::process::exit;
-use std::process::Command;
+use getopts::Options;
+use std::process::{exit, Command};
+use std::{env, fs::File, io::Read};
 use toml_edit::{Array, Document, Table};
-
-fn print_help() {
-  println!("Usage: doit <command> [args...]");
-  println!("       doit --help <command>");
-  println!("       doit --cmds");
-}
 
 fn read_doit_file() -> Document {
   let mut contents = String::new();
@@ -22,7 +14,7 @@ fn read_doit_file() -> Document {
   contents.parse::<Document>().expect("Unable to parse TOML")
 }
 
-fn print_alias_help(cmd_name: &str) {
+fn show_details(cmd_name: &str) {
   let doc = read_doit_file();
 
   if let Some(table) = doc[cmd_name].as_table() {
@@ -92,8 +84,7 @@ fn process_pre_post_cmd(which: &str, cmd_name: &str, table: &Table) {
     };
     let rc = exit_status.expect("RC").code().unwrap_or(1);
     if rc != 0 {
-      println!("Exit status: {}", rc);
-      exit(rc);
+      panic!("Exit status: {}", rc);
     }
   }
 }
@@ -134,8 +125,7 @@ fn process_cmd(cmd_name: &str, table: &Table, additional_args: &[String]) {
       process_pre_post_cmd("post", cmd_name, &table);
     }
   } else {
-    println!("Exit status: {}", rc);
-    exit(rc);
+    panic!("Exit status: {}", rc);
   }
 }
 
@@ -145,32 +135,78 @@ fn list_cmds() {
   }
 }
 
+fn print_usage(program: &str, opts: Options) {
+  let brief = format!("Usage: {} <command> [args...]", program);
+  print!("{}", opts.usage(&brief));
+}
+
+fn print_about(program: &str) {
+  println!("program: {}", program);
+  println!("version: {}", env!("CARGO_PKG_VERSION"));
+  println!("author: {}", env!("CARGO_PKG_AUTHORS"));
+  println!("about: {}", env!("CARGO_PKG_DESCRIPTION"));
+}
+
 fn main() {
+  // Get package information from Cargo.toml using env! macros
+
   let args: Vec<String> = env::args().collect();
-  if args.len() < 2 || args[1] == "--help" {
-    if args.len() > 2 {
-      print_alias_help(&args[2]);
-    } else {
-      print_help();
+  let program = args[0].clone();
+
+  let mut opts = Options::new();
+  opts.optflag("", "help", "print this help menu");
+  opts.optflag("", "cmds", "list all available commands");
+  opts.optflag("", "about", "about this program");
+  opts.optopt("", "show", "show details for command", "command");
+
+  let matches = match opts.parse(&args[1..]) {
+    Ok(m) => m,
+    Err(f) => {
+      panic!("{}", f.to_string())
     }
+  };
+
+  if matches.opt_present("help") {
+    print_usage(&program, opts);
     return;
   }
-  if args.len() < 2 || args[1] == "--cmds" {
+
+  if matches.opt_present("about") {
+    print_about(&program);
+    return;
+  }
+
+  if let Some(cmd_name) = matches.opt_str("show") {
+    show_details(&cmd_name);
+    return;
+  }
+
+  if matches.opt_present("cmds") {
     list_cmds();
     return;
   }
 
-  let cmd_name = &args[1];
-  let additional_args = if args.len() > 2 { &args[2..] } else { &[] };
+  let cmd_name = if !matches.free.is_empty() {
+    matches.free[0].clone()
+  } else {
+    print_usage(&program, opts);
+    return;
+  };
+
+  let additional_args = if matches.free.len() > 1 {
+    matches.free[1..].to_vec()
+  } else {
+    vec![]
+  };
 
   let doc = read_doit_file();
-  if doc.contains_key(cmd_name) {
-    if let Some(table) = doc[cmd_name].as_table() {
-      process_cmd(cmd_name, &table, additional_args);
+  if doc.contains_key(&cmd_name) {
+    if let Some(table) = doc[&cmd_name].as_table() {
+      process_cmd(&cmd_name, &table, &additional_args);
     }
   } else {
-    println!("Alias not found");
-    print_help();
-    exit(1)
+    println!("command not found");
+    print_usage(&program, opts);
+    exit(1);
   }
 }

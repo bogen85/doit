@@ -6,6 +6,7 @@ version = 3
 name = "doit"
 version = "0.1.0"
 dependencies = [
+ "getopts",
  "toml_edit",
 ]
 
@@ -14,6 +15,15 @@ name = "equivalent"
 version = "1.0.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = ""
+
+[[package]]
+name = "getopts"
+version = "0.2.21"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = ""
+dependencies = [
+ "unicode-width",
+]
 
 [[package]]
 name = "hashbrown"
@@ -53,6 +63,12 @@ dependencies = [
  "toml_datetime",
  "winnow",
 ]
+
+[[package]]
+name = "unicode-width"
+version = "0.1.11"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = ""
 
 [[package]]
 name = "winnow"

@@ -2,8 +2,11 @@
 name = "doit"
 version = "0.1.0"
 edition = "2021"
+authors = ["Bogen85"]
+description = "Simple TOML based command runner"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
 toml_edit = "0.21"
+getopts = "0.2.21"
