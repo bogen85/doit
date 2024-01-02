@@ -55,27 +55,40 @@ fn print_alias_help(cmd_name: &str) {
   }
 }
 
-fn process_pre_post_cmd(which: &str, cmd_name: &str, sub_args: &Array) {
+fn process_pre_post_cmd(which: &str, cmd_name: &str, table: &Table) {
+  let sub_args = table[which]
+    .as_array()
+    .expect(&format!("{} is not an array", which));
+
   for (index, args_in) in sub_args.iter().enumerate() {
+    println!("Runing command {}:{}:{}", cmd_name, which, index + 1);
+
     let args = {
-      let vec_in = args_in.as_array().expect("Value is not an array");
+      let vec_in = args_in
+        .as_array()
+        .expect(&format!("{}[{}] is not an array", which, index));
       let mut vec: Vec<String> = Vec::new();
       for arg in vec_in {
-        vec.push(arg.as_str().expect("Invalid argument").to_string());
+        vec.push(
+          arg
+            .as_str()
+            .expect(&format!("Invalid argument for {}:[{}]", which, index))
+            .to_string(),
+        );
       }
       vec
     };
 
-    let cmd = args.get(0).expect("args is empty");
+    let cmd = args
+      .get(0)
+      .expect(&format!("{}[{}] array is empty", which, index));
     let cmd_args = if args.len() > 1 { &args[1..] } else { &[] };
 
-    println!("Runing command {}:{}:{}", cmd_name, which, index + 1);
-
     let exit_status = {
-      let mut child = Command::new(&cmd)
-        .args(&*cmd_args)
-        .spawn()
-        .expect("Failed to execute command");
+      let mut child = Command::new(&cmd).args(&*cmd_args).spawn().expect(&format!(
+        "Failed to execute command: {}:{:?}",
+        cmd, cmd_args
+      ));
       child.wait()
     };
     let rc = exit_status.expect("RC").code().unwrap_or(1);
@@ -88,14 +101,14 @@ fn process_pre_post_cmd(which: &str, cmd_name: &str, sub_args: &Array) {
 
 fn process_cmd(cmd_name: &str, table: &Table, additional_args: &[String]) {
   if table.contains_key("pre") {
-    if let Some(args) = table["pre"].as_array() {
-      process_pre_post_cmd("pre", cmd_name, &args);
-    }
+    process_pre_post_cmd("pre", cmd_name, &table);
   }
 
   println!("Runing command {}", cmd_name);
 
-  let command = table["command"].as_str().expect("Missing command");
+  let command = table["command"]
+    .as_str()
+    .expect(&format!("{}: missing command", cmd_name));
   let mut args = vec![command.to_string()];
 
   let toml_args: Array = if table.contains_key("args") {
@@ -112,16 +125,14 @@ fn process_cmd(cmd_name: &str, table: &Table, additional_args: &[String]) {
     let mut child = Command::new(&args[0])
       .args(&args[1..])
       .spawn()
-      .expect("Failed to execute command");
+      .expect(&format!("Failed to execute command: {:?}", args));
     child.wait()
   };
   let rc = exit_status.expect("RC").code().unwrap_or(1);
 
   if rc == 0 {
     if table.contains_key("post") {
-      if let Some(args) = table["post"].as_array() {
-        process_pre_post_cmd("post", cmd_name, &args);
-      }
+      process_pre_post_cmd("post", cmd_name, &table);
     }
   } else {
     println!("Exit status: {}", rc);
