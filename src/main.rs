@@ -4,6 +4,7 @@ use std::io::Read;
 use std::process::exit;
 use std::process::Command;
 use toml_edit::Document;
+use toml_edit::Table;
 
 fn print_help() {
   println!("Usage: doit <alias> [args...]");
@@ -53,6 +54,41 @@ fn print_alias_help(alias: &str) {
   }
 }
 
+fn process_cmd(table: &Table, additional_args: &[String]) {
+  let command = table["command"].as_str().expect("Missing command");
+  let mut args = vec![command.to_string()];
+
+  let toml_args: toml_edit::Array = if table.contains_key("args") {
+    table["args"].as_array().expect("Array!").clone()
+  } else {
+    toml_edit::Array::default()
+  };
+  for arg in toml_args {
+    args.push(arg.as_str().expect("Invalid argument").to_string());
+  }
+  args.extend_from_slice(additional_args);
+
+  let exit_status = {
+    let mut child = Command::new(&args[0])
+      .args(&args[1..])
+      .spawn()
+      .expect("Failed to execute command");
+    child.wait()
+  };
+  let rc = exit_status.expect("RC").code().unwrap_or(1);
+
+  if rc == 0 {
+    if table.contains_key("post") {
+      if let Some(sub_table) = table["post"].as_table() {
+        process_cmd(&sub_table, &[]);
+      }
+    }
+  } else {
+    println!("Exit status: {}", rc);
+    exit(rc);
+  }
+}
+
 fn main() {
   let args: Vec<String> = env::args().collect();
   if args.len() < 2 || args[1] == "--help" {
@@ -70,34 +106,13 @@ fn main() {
   let contents = read_doit_file();
 
   let doc = contents.parse::<Document>().expect("Unable to parse TOML");
-
-  if let Some(table) = doc[alias].as_table() {
-    let command = table["command"].as_str().expect("Missing command");
-    let mut args = vec![command.to_string()];
-
-    let toml_args: toml_edit::Array = if table.contains_key("args") {
-      table["args"].as_array().expect("Array!").clone()
-    } else {
-      toml_edit::Array::default()
-    };
-    for arg in toml_args {
-      args.push(arg.as_str().expect("Invalid argument").to_string());
+  if doc.contains_key(alias) {
+    if let Some(table) = doc[alias].as_table() {
+      process_cmd(&table, additional_args);
     }
-    args.extend_from_slice(additional_args);
-
-    let exit_status = {
-      let mut child = Command::new(&args[0])
-        .args(&args[1..])
-        .spawn()
-        .expect("Failed to execute command");
-      child.wait()
-    };
-    let rc = exit_status.expect("RC").code().unwrap_or(1);
-
-    println!("Exit status: {}", rc);
-    exit(rc);
   } else {
     println!("Alias not found");
-    exit(1);
+    print_help();
+    exit(1)
   }
 }
