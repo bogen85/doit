@@ -159,12 +159,12 @@ fn show_details(cmd_name: &str) -> bool {
 fn main() {
   let args = {
     let mut args: Vec<String> = env::args().collect();
-    if args.len() > 1 {
+    while args.len() > 1 {
       match args[1].as_str() {
-        | "doit" | "do" => {
+        | "doit" | "do" | "--" => {
           args.remove(1);
         },
-        | _ => {},
+        | _ => break,
       }
     }
     args

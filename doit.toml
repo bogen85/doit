@@ -3,11 +3,12 @@
 [install]
 command = "cargo"
 exe = "bin/doit"
-cargo-do = "bin/cargo-do"
+cargo-do = "~/bin/cargo-do"
 args = ["install",  "--path",  "."]
+pre = [["cargo", "clean"]]
 post = [
   ["bash", "-c", "cp -fav ~/.cargo/%exe% ~/%exe%"],
-  ["bash", "-c", "cp -fav ~/.cargo/%exe% ~/%cargo-do%"]
+  ["bash", "-c", "cp -fav ~/.cargo/%exe% %cargo-do%"]
 ]
 
 [clear-dot-cargo]
