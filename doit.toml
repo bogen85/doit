@@ -24,3 +24,16 @@ args = ["!{env:USER}"]
 [env-test]
 command = "echo"
 args = ["!{env:UNKOWN:ok}"]
+
+[fail1]
+command = "ls"
+args = ["-l"]
+
+post = [["ls", "/NONE" ]]
+
+[fail2]
+command = "ls"
+args = ["/NONE"]
+
+[fail3]
+command = "/NONE"

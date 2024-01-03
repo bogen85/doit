@@ -7,6 +7,9 @@ use std::process::{exit, Command};
 use std::{env, fs::File, io::Read};
 use toml_edit::{Array, Document, Table};
 
+const ASCII_SUB1: &str = "\x1A\x01";
+const ASCII_SUB2: &str = "\x1A\x02";
+
 static HOME: Lazy<String> =
   Lazy::new(|| dirs::home_dir().expect("home_dir undefined").to_str().expect("String").to_string());
 
@@ -14,16 +17,15 @@ static ENV0_RE: Lazy<Regex> = Lazy::new(|| Regex::new(r"!\{env:(.*?):(.*?)\}").u
 static ENV1_RE: Lazy<Regex> = Lazy::new(|| Regex::new(r"!\{env:(.*?)\}").unwrap());
 static VAR_RE: Lazy<Regex> = Lazy::new(|| Regex::new(r"!\{(.*?)\}").unwrap());
 
+static EMPTY_STRING: Lazy<String> = Lazy::new(|| String::default());
+
+const DOIT_FILE: &str = "doit.toml";
+
 fn read_doit_file() -> Document {
   let mut contents = String::new();
-  File::open("doit.toml").expect("Unable to open file").read_to_string(&mut contents).expect("Unable to read file");
+  File::open(DOIT_FILE).expect("Unable to open file").read_to_string(&mut contents).expect("Unable to read file");
   contents.parse::<Document>().expect("Unable to parse TOML")
 }
-
-const ASCII_SUB1: &str = "\x1A\x01";
-const ASCII_SUB2: &str = "\x1A\x02";
-//const ASCII_SUB3: &str = "\x1A\x03";
-//const ASCII_SUB4: &str = "\x1A\x04";
 
 fn render_template(table: &Table, template: &str) -> String {
   let x0 = template.to_string().replace("~~", &ASCII_SUB1).replace("!!", &ASCII_SUB2);
@@ -56,13 +58,28 @@ fn render_template(table: &Table, template: &str) -> String {
         | Some(value) => format!("{}", value.as_str().expect("String")),
         | None => {
           panic!("(Unknown table key: {})", key)
-        },
+        }
       }
     })
     .to_string()
     .replace("~", &HOME)
     .replace(&ASCII_SUB1, "~")
     .replace(&ASCII_SUB2, "!")
+}
+
+fn run_cmd(args: Vec<String>) {
+  let exit_status = {
+    let mut child =
+      Command::new(&args[0]).args(&args[1..]).spawn().expect(&format!("Failed to execute command: {:?}", args));
+    child.wait()
+  };
+  let rc = exit_status.expect("RC").code().unwrap_or(1);
+
+  if rc != 0 {
+    let err = format!("exit status: {}", rc);
+    eprintln!("{:?}\nfailed with {}", args, err);
+    panic!("{}", err);
+  }
 }
 
 fn process_pre_post_cmd(which: &str, cmd_name: &str, table: &Table) {
@@ -83,22 +100,10 @@ fn process_pre_post_cmd(which: &str, cmd_name: &str, table: &Table) {
       vec
     };
 
-    let cmd = args.get(0).expect(&format!("{}[{}] array is empty", which, index));
-    let cmd_args = if args.len() > 1 { &args[1..] } else { &[] };
-
-    let exit_status = {
-      let mut child = Command::new(&cmd)
-        .args(&*cmd_args)
-        .spawn()
-        .expect(&format!("Failed to execute sub command: {}:{:?}", cmd, cmd_args));
-      child.wait()
-    };
-    let rc = exit_status.expect("RC").code().unwrap_or(1);
-    if rc != 0 {
-      let err = format!("exit status: {}", rc);
-      eprintln!("{:?} {:?}\nfailed with {}", cmd, cmd_args, err);
-      panic!("{}", err);
+    if args.len() < 1 {
+      panic!("{}[{}] array is empty", which, index);
     }
+    run_cmd(args);
   }
 }
 
@@ -123,34 +128,23 @@ fn process_cmd(cmd_name: &str, table: &Table, additional_args: &[String]) {
     args
   };
 
-  let exit_status = {
-    let mut child =
-      Command::new(&args[0]).args(&args[1..]).spawn().expect(&format!("Failed to execute command: {:?}", args));
-    child.wait()
-  };
-  let rc = exit_status.expect("RC").code().unwrap_or(1);
+  run_cmd(args);
 
-  if rc == 0 {
-    if table.contains_key("post") {
-      process_pre_post_cmd("post", cmd_name, &table);
-    }
-  } else {
-    let err = format!("exit status: {}", rc);
-    eprintln!("{:?}\nfailed with {}", args, err);
-    panic!("{}", err);
+  if table.contains_key("post") {
+    process_pre_post_cmd("post", cmd_name, &table);
   }
 }
 
-fn primary(cmd_name: &str, additional_args: &[String]) -> bool {
+fn primary(cmd_name: &str, additional_args: &[String]) -> Result<(), String> {
   let doc = read_doit_file();
-  return if doc.contains_key(&cmd_name) {
+  if doc.contains_key(&cmd_name) {
     if let Some(table) = doc[&cmd_name].as_table() {
       process_cmd(&cmd_name, &table, &additional_args);
     }
-    true
+    Ok(())
   } else {
-    false
-  };
+    Err(format!("{} not found", cmd_name))
+  }
 }
 
 fn list_cmds() {
@@ -159,9 +153,10 @@ fn list_cmds() {
   }
 }
 
-fn print_usage(program: &str, opts: Options) {
+fn print_usage(program: &str, opts: &Options) {
   let brief = format!("Usage: {} <command> [args...]", program);
-  print!("{}", opts.usage(&brief));
+  println!("{}", opts.usage(&brief));
+  println!("Commands are read from {} by default.", DOIT_FILE);
 }
 
 fn print_about(program: &str) {
@@ -171,17 +166,17 @@ fn print_about(program: &str) {
   println!("about: {}", env!("CARGO_PKG_DESCRIPTION"));
 }
 
-fn show_details(cmd_name: &str) -> bool {
+fn show_details(cmd_name: &str) -> Result<(), String> {
   let doc = read_doit_file();
 
   if !doc.contains_key(cmd_name) {
-    return false;
+    return Err(format!("{} not found", cmd_name));
   }
 
   if let Some(table) = doc[cmd_name].as_table() {
     let command = table["command"].as_str().expect("Missing command");
     let description = if table.contains_key("description") {
-      table["description"].as_str().unwrap_or("No description provided")
+      table["description"].as_str().unwrap_or("description must be a string")
     } else {
       "No description provided"
     };
@@ -199,24 +194,16 @@ fn show_details(cmd_name: &str) -> bool {
   } else {
     println!("Alias not found");
   }
-  return true;
+  Ok(())
 }
 
 fn main() {
-  let args = {
-    let mut args: Vec<String> = env::args().collect();
-    while args.len() > 1 {
-      match args[1].as_str() {
-        | "doit" | "do" | "--" => {
-          args.remove(1);
-        },
-        | _ => break,
-      }
-    }
-    args
+  let (program, args) = {
+    let args0: Vec<_> = env::args().collect();
+    let remove = vec!["doit", "do", "--"];
+    let args: Vec<_> = args0[1..].iter().skip_while(|x| remove.contains(&x.as_str())).cloned().collect();
+    (args0[0].clone(), args)
   };
-
-  let program = args[0].clone();
 
   let opts = {
     let mut opts = Options::new();
@@ -227,15 +214,22 @@ fn main() {
     opts
   };
 
-  let matches = match opts.parse(&args[1..]) {
+  let die = |e: Option<String>| {
+    match e {
+      | Some(e) => println!("{}", e),
+      | None => {}
+    }
+    print_usage(&program, &opts);
+    exit(1);
+  };
+
+  let matches = match opts.parse(&args) {
     | Ok(m) => m,
-    | Err(f) => {
-      panic!("{}", f.to_string())
-    },
+    | Err(e) => die(Some(e.to_string())),
   };
 
   if matches.opt_present("help") {
-    return print_usage(&program, opts);
+    return print_usage(&program, &opts);
   }
 
   if matches.opt_present("about") {
@@ -243,29 +237,27 @@ fn main() {
   }
 
   if let Some(cmd_name) = matches.opt_str("show") {
-    if !show_details(&cmd_name) {
-      println!("{} not found", cmd_name);
-      print_usage(&program, opts);
-      exit(1);
-    }
-    return;
+    match show_details(&cmd_name) {
+      | Ok(()) => return,
+      | Err(e) => die(Some(e)),
+    };
   }
 
   if matches.opt_present("cmds") {
     return list_cmds();
   }
-
-  let cmd_name = if !matches.free.is_empty() {
-    matches.free[0].clone()
-  } else {
-    print_usage(&program, opts);
-    exit(1);
-  };
+  let cmd_name = matches
+    .free
+    .get(0)
+    .unwrap_or_else(|| {
+      die(None);
+      &EMPTY_STRING
+    })
+    .clone();
 
   let additional_args = if matches.free.len() > 1 { matches.free[1..].to_vec() } else { vec![] };
-  if !primary(&cmd_name, &additional_args) {
-    println!("{} not found", cmd_name);
-    print_usage(&program, opts);
-    exit(1);
-  }
+  match primary(&cmd_name, &additional_args) {
+    | Ok(()) => return,
+    | Err(e) => die(Some(e)),
+  };
 }
