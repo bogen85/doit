@@ -17,17 +17,13 @@ fn read_doit_file() -> Document {
 const ASCII_SUB: &str = "\x1A";
 
 fn render_template(table: &Table, template: &str) -> String {
-  let mut result = template.to_string();
-
-  result = result.replace("%%", &ASCII_SUB);
-
+  let mut render = template.to_string().replace("%%", &ASCII_SUB);
   for (key, value) in table.iter() {
     if let Some(val) = value.as_str() {
-      let placeholder = format!("%{}%", key);
-      result = result.replace(&placeholder, val);
+      render = render.replace(&format!("%{}%", key), val);
     }
   }
-  result.replace(&ASCII_SUB, "%%")
+  render.replace(&ASCII_SUB, "%%")
 }
 
 fn process_pre_post_cmd(which: &str, cmd_name: &str, table: &Table) {
@@ -104,8 +100,10 @@ fn process_cmd(cmd_name: &str, table: &Table, additional_args: &[String]) {
   };
 
   let exit_status = {
-    let mut child = Command::new(&args[0])
-      .args(&args[1..])
+    let cmd = &args[0];
+    let argv = &args[1..];
+    let mut child = Command::new(cmd)
+      .args(argv)
       .spawn()
       .expect(&format!("Failed to execute command: {:?}", args));
     child.wait()
