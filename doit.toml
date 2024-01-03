@@ -2,31 +2,25 @@
 
 [install]
 command = "cargo"
+args = ["install",  "--path",  "."]
 exe = "bin/doit"
 cargo-do = "~/bin/cargo-do"
-args = ["install",  "--path",  "."]
-pre = [["cargo", "clean"]]
 post = [
-  ["bash", "-c", "cp -fav ~/.cargo/%exe% ~/%exe%"],
-  ["bash", "-c", "cp -fav ~/.cargo/%exe% %cargo-do%"]
+  ["cp", "-fav", "~/.cargo/!{exe}", "~/!{exe}"],
+  ["cp", "-fav", "~/.cargo/!{exe}", "!{cargo-do}"],
 ]
 
 [clear-dot-cargo]
-command = "bash"
+command = "rm"
 dir = "~/.cargo"
-args = ["-c",  "rm -rf %dir%"]
-pre = [["bash", "-c", "du -hs %dir%"]]
-post = [
-    [
-      "bash", "-c",
-      '''
-        if [ -d %dir% ]; then
-          file %dir%
-          echo fail
-          exit 1
-        else
-          echo ok
-        fi
-      '''
-    ],
-]
+args = ["-rf", "!{dir}"]
+pre = [["du", "-hs", "!{dir}"]]
+post = [["test", "!!", "-d", "!{dir}"]]
+
+[whoami]
+command = "echo"
+args = ["!{env:USER}"]
+
+[env-test]
+command = "echo"
+args = ["!{env:UNKOWN:ok}"]

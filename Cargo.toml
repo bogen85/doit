@@ -10,3 +10,6 @@ description = "Simple TOML based command runner"
 [dependencies]
 toml_edit = "0.21"
 getopts = "0.2.21"
+regex = "1.10.2"
+dirs = "5.0.1"
+once_cell = "1.19.0"

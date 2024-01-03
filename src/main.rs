@@ -1,9 +1,18 @@
 // code: language=Rust insertSpaces=true tabSize=2
-
+use dirs;
 use getopts::Options;
+use once_cell::sync::Lazy;
+use regex::Regex;
 use std::process::{exit, Command};
 use std::{env, fs::File, io::Read};
 use toml_edit::{Array, Document, Table};
+
+static HOME: Lazy<String> =
+  Lazy::new(|| dirs::home_dir().expect("home_dir undefined").to_str().expect("String").to_string());
+
+static ENV0_RE: Lazy<Regex> = Lazy::new(|| Regex::new(r"!\{env:(.*?):(.*?)\}").unwrap());
+static ENV1_RE: Lazy<Regex> = Lazy::new(|| Regex::new(r"!\{env:(.*?)\}").unwrap());
+static VAR_RE: Lazy<Regex> = Lazy::new(|| Regex::new(r"!\{(.*?)\}").unwrap());
 
 fn read_doit_file() -> Document {
   let mut contents = String::new();
@@ -11,16 +20,49 @@ fn read_doit_file() -> Document {
   contents.parse::<Document>().expect("Unable to parse TOML")
 }
 
-const ASCII_SUB: &str = "\x1A";
+const ASCII_SUB1: &str = "\x1A\x01";
+const ASCII_SUB2: &str = "\x1A\x02";
+//const ASCII_SUB3: &str = "\x1A\x03";
+//const ASCII_SUB4: &str = "\x1A\x04";
 
 fn render_template(table: &Table, template: &str) -> String {
-  let mut render = template.to_string().replace("%%", &ASCII_SUB);
-  for (key, value) in table.iter() {
-    if let Some(val) = value.as_str() {
-      render = render.replace(&format!("%{}%", key), val);
-    }
-  }
-  render.replace(&ASCII_SUB, "%%")
+  let x0 = template.to_string().replace("~~", &ASCII_SUB1).replace("!!", &ASCII_SUB2);
+
+  let x1 = ENV0_RE
+    .replace_all(&x0, |caps: &regex::Captures| {
+      let evar = &caps[1];
+      match env::var(&evar) {
+        | Ok(value) => value,
+        | Err(_) => caps[2].to_string(),
+      }
+    })
+    .to_string();
+
+  let x2 = ENV1_RE
+    .replace_all(&x1, |caps: &regex::Captures| {
+      let evar = &caps[1];
+      match env::var(&evar) {
+        | Ok(value) => value,
+        | Err(_) => panic!("(Unknown ENV variable: {})", evar),
+      }
+    })
+    .to_string();
+
+  VAR_RE
+    .replace_all(&x2, |caps: &regex::Captures| {
+      let key = &caps[1];
+
+      match table.get(key) {
+        | Some(value) => format!("{}", value.as_str().expect("String")),
+        | None => {
+          panic!("(Unknown table key: {})", key)
+        },
+      }
+    })
+    .to_string()
+    .replace("~", &HOME)
+    .replace(&ASCII_SUB1, "~")
+    .replace(&ASCII_SUB2, "!")
 }
 
 fn process_pre_post_cmd(which: &str, cmd_name: &str, table: &Table) {
@@ -53,7 +95,9 @@ fn process_pre_post_cmd(which: &str, cmd_name: &str, table: &Table) {
     };
     let rc = exit_status.expect("RC").code().unwrap_or(1);
     if rc != 0 {
-      panic!("Exit status: {}", rc);
+      let err = format!("exit status: {}", rc);
+      eprintln!("{:?} {:?}\nfailed with {}", cmd, cmd_args, err);
+      panic!("{}", err);
     }
   }
 }
@@ -91,7 +135,9 @@ fn process_cmd(cmd_name: &str, table: &Table, additional_args: &[String]) {
       process_pre_post_cmd("post", cmd_name, &table);
     }
   } else {
-    panic!("Exit status: {}", rc);
+    let err = format!("exit status: {}", rc);
+    eprintln!("{:?}\nfailed with {}", args, err);
+    panic!("{}", err);
   }
 }
 
