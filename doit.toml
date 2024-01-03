@@ -1,39 +1,39 @@
 # code: language=TOML insertSpaces=true tabSize=2
 
 [install]
-command = "cargo"
-args = ["install",  "--path",  "."]
+command = ["cargo", "install",  "--path",  "."]
+
 exe = "bin/doit"
 cargo-do = "~/bin/cargo-do"
+
 post = [
   ["cp", "-fav", "~/.cargo/!{exe}", "~/!{exe}"],
   ["cp", "-fav", "~/.cargo/!{exe}", "!{cargo-do}"],
 ]
 
 [clear-dot-cargo]
-command = "rm"
+command = ["rm", "-rf", "!{dir}"]
+
 dir = "~/.cargo"
-args = ["-rf", "!{dir}"]
 pre = [["du", "-hs", "!{dir}"]]
 post = [["test", "!!", "-d", "!{dir}"]]
 
 [whoami]
-command = "echo"
-args = ["!{env:USER}"]
+command = ["echo", "!{env:USER}"]
 
 [env-test]
-command = "echo"
-args = ["!{env:UNKOWN:ok}"]
+command = ["echo", "!{env:UNKOWN:ok}"]
 
 [fail1]
-command = "ls"
-args = ["-l"]
+command = ["ls", "-l"]
 
 post = [["ls", "/NONE" ]]
 
 [fail2]
-command = "ls"
-args = ["/NONE"]
+command = ["ls", "/NONE"]
 
 [fail3]
 command = "/NONE"
+
+[fail4]
+command = ["/NONE"]

@@ -82,28 +82,33 @@ fn run_cmd(args: Vec<String>) {
   }
 }
 
+fn process_args(vec_in: &Array, which: &str, table: &Table, index: usize, additional_args: &[String]) -> Vec<String> {
+  if vec_in.len() < 1 {
+    panic!("{}[{}] arg vector is empty", which, index);
+  }
+  let mut vec: Vec<String> = Vec::new();
+  for arg in vec_in {
+    vec.push(render_template(
+      table,
+      &arg.as_str().expect(&format!("Invalid argument for {}:[{}]", which, index)).to_string(),
+    ));
+  }
+  vec.extend_from_slice(additional_args);
+  vec
+}
+
 fn process_pre_post_cmd(which: &str, cmd_name: &str, table: &Table) {
   let sub_args = table[which].as_array().expect(&format!("{} is not an array", which));
 
   for (index, args_in) in sub_args.iter().enumerate() {
     println!("Running command {}:{}:{}", cmd_name, which, index + 1);
-
-    let args = {
-      let vec_in = args_in.as_array().expect(&format!("{}[{}] is not an array", which, index));
-      let mut vec: Vec<String> = Vec::new();
-      for arg in vec_in {
-        vec.push(render_template(
-          table,
-          &arg.as_str().expect(&format!("Invalid argument for {}:[{}]", which, index)).to_string(),
-        ));
-      }
-      vec
-    };
-
-    if args.len() < 1 {
-      panic!("{}[{}] array is empty", which, index);
-    }
-    run_cmd(args);
+    run_cmd(process_args(
+      args_in.as_array().expect(&format!("{}[{}] is not an array", which, index)),
+      which,
+      table,
+      index,
+      &[],
+    ));
   }
 }
 
@@ -113,22 +118,13 @@ fn process_cmd(cmd_name: &str, table: &Table, additional_args: &[String]) {
   }
 
   println!("Running command {}", cmd_name);
-
-  let command = table["command"].as_str().expect(&format!("{}: missing command", cmd_name));
-
-  let args = {
-    let mut args = vec![command.to_string()];
-
-    let toml_args: Array =
-      if table.contains_key("args") { table["args"].as_array().expect("Array!").clone() } else { Array::default() };
-    for arg in toml_args {
-      args.push(render_template(table, arg.as_str().expect("Invalid argument")));
-    }
-    args.extend_from_slice(additional_args);
-    args
-  };
-
-  run_cmd(args);
+  run_cmd(process_args(
+    table["command"].as_array().expect(&format!("{}: missing command array", cmd_name)),
+    "primary",
+    table,
+    0,
+    additional_args,
+  ));
 
   if table.contains_key("post") {
     process_pre_post_cmd("post", cmd_name, &table);
