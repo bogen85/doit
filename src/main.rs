@@ -11,7 +11,7 @@ const ASCII_SUB1: &str = "\x1A\x01";
 const ASCII_SUB2: &str = "\x1A\x02";
 
 static HOME: Lazy<String> =
-  Lazy::new(|| dirs::home_dir().expect("home_dir undefined").to_str().expect("String").to_string());
+  Lazy::new(|| format!("{}/", dirs::home_dir().expect("home_dir undefined").to_str().expect("String").to_string()));
 
 static ENV0_RE: Lazy<Regex> = Lazy::new(|| Regex::new(r"!\{env:(.*?):(.*?)\}").unwrap());
 static ENV1_RE: Lazy<Regex> = Lazy::new(|| Regex::new(r"!\{env:(.*?)\}").unwrap());
@@ -30,25 +30,21 @@ fn read_doit_file() -> Document {
 fn render_template(table: &Table, template: &str) -> String {
   let x0 = template.to_string().replace("~~", &ASCII_SUB1).replace("!!", &ASCII_SUB2);
 
-  let x1 = ENV0_RE
-    .replace_all(&x0, |caps: &regex::Captures| {
-      let evar = &caps[1];
-      match env::var(&evar) {
-        | Ok(value) => value,
-        | Err(_) => caps[2].to_string(),
-      }
-    })
-    .to_string();
+  let x1 = ENV0_RE.replace_all(&x0, |caps: &regex::Captures| {
+    let evar = &caps[1];
+    match env::var(&evar) {
+      | Ok(value) => value,
+      | Err(_) => caps[2].to_string(),
+    }
+  });
 
-  let x2 = ENV1_RE
-    .replace_all(&x1, |caps: &regex::Captures| {
-      let evar = &caps[1];
-      match env::var(&evar) {
-        | Ok(value) => value,
-        | Err(_) => panic!("(Unknown ENV variable: {})", evar),
-      }
-    })
-    .to_string();
+  let x2 = ENV1_RE.replace_all(&x1, |caps: &regex::Captures| {
+    let evar = &caps[1];
+    match env::var(&evar) {
+      | Ok(value) => value,
+      | Err(_) => panic!("(Unknown ENV variable: {})", evar),
+    }
+  });
 
   VAR_RE
     .replace_all(&x2, |caps: &regex::Captures| {
@@ -61,8 +57,7 @@ fn render_template(table: &Table, template: &str) -> String {
         }
       }
     })
-    .to_string()
-    .replace("~", &HOME)
+    .replace("~/", &HOME)
     .replace(&ASCII_SUB1, "~")
     .replace(&ASCII_SUB2, "!")
 }
@@ -82,19 +77,21 @@ fn run_cmd(args: Vec<String>) {
   }
 }
 
-fn process_args(vec_in: &Array, which: &str, table: &Table, index: usize, additional_args: &[String]) -> Vec<String> {
-  if vec_in.len() < 1 {
-    panic!("{}[{}] arg vector is empty", which, index);
-  }
-  let mut vec: Vec<String> = Vec::new();
-  for arg in vec_in {
-    vec.push(render_template(
-      table,
-      &arg.as_str().expect(&format!("Invalid argument for {}:[{}]", which, index)).to_string(),
-    ));
-  }
-  vec.extend_from_slice(additional_args);
-  vec
+fn run_argv(vec_in: &Array, which: &str, table: &Table, index: usize, args: &[String]) {
+  run_cmd({
+    if vec_in.len() < 1 {
+      panic!("{}[{}] arg vector is empty", which, index);
+    }
+    let mut vec: Vec<String> = Vec::new();
+    for arg in vec_in {
+      vec.push(render_template(
+        table,
+        &arg.as_str().expect(&format!("Invalid argument for {}:[{}]", which, index)).to_string(),
+      ));
+    }
+    vec.extend_from_slice(args);
+    vec
+  });
 }
 
 fn process_pre_post_cmd(which: &str, cmd_name: &str, table: &Table) {
@@ -102,40 +99,28 @@ fn process_pre_post_cmd(which: &str, cmd_name: &str, table: &Table) {
 
   for (index, args_in) in sub_args.iter().enumerate() {
     println!("Running command {}:{}:{}", cmd_name, which, index + 1);
-    run_cmd(process_args(
-      args_in.as_array().expect(&format!("{}[{}] is not an array", which, index)),
-      which,
-      table,
-      index,
-      &[],
-    ));
+    run_argv(args_in.as_array().expect(&format!("{}[{}] is not an array", which, index)), which, table, index, &[]);
   }
 }
 
-fn process_cmd(cmd_name: &str, table: &Table, additional_args: &[String]) {
+fn process_cmd(cmd_name: &str, table: &Table, args: &[String]) {
   if table.contains_key("pre") {
     process_pre_post_cmd("pre", cmd_name, &table);
   }
 
   println!("Running command {}", cmd_name);
-  run_cmd(process_args(
-    table["command"].as_array().expect(&format!("{}: missing command array", cmd_name)),
-    "primary",
-    table,
-    0,
-    additional_args,
-  ));
+  run_argv(table["command"].as_array().expect(&format!("{}: missing command array", cmd_name)), "main", table, 0, args);
 
   if table.contains_key("post") {
     process_pre_post_cmd("post", cmd_name, &table);
   }
 }
 
-fn primary(cmd_name: &str, additional_args: &[String]) -> Result<(), String> {
+fn primary(cmd_name: &str, args: &[String]) -> Result<(), String> {
   let doc = read_doit_file();
   if doc.contains_key(&cmd_name) {
     if let Some(table) = doc[&cmd_name].as_table() {
-      process_cmd(&cmd_name, &table, &additional_args);
+      process_cmd(&cmd_name, &table, &args);
     }
     Ok(())
   } else {
@@ -251,8 +236,8 @@ fn main() {
     })
     .clone();
 
-  let additional_args = if matches.free.len() > 1 { matches.free[1..].to_vec() } else { vec![] };
-  match primary(&cmd_name, &additional_args) {
+  let args = if matches.free.len() > 1 { matches.free[1..].to_vec() } else { vec![] };
+  match primary(&cmd_name, &args) {
     | Ok(()) => return,
     | Err(e) => die(Some(e)),
   };

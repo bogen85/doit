@@ -37,3 +37,4 @@ command = "/NONE"
 
 [fail4]
 command = ["/NONE"]
+boo = [":boo", "cow"]
