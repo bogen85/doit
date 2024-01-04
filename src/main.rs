@@ -208,10 +208,13 @@ fn print_usage(program: &str, opts: &Options) -> Result<(), String> {
 }
 
 fn print_about(program: &str) -> Result<(), String> {
-  println!("program: {}", program);
-  println!("version: {}", env!("CARGO_PKG_VERSION"));
-  println!("author: {}", env!("CARGO_PKG_AUTHORS"));
-  println!("about: {}", env!("CARGO_PKG_DESCRIPTION"));
+  println!(
+    "program: {}\nversion: {}\nauthor: {}\nabout: {}",
+    program,
+    env!("CARGO_PKG_VERSION"),
+    env!("CARGO_PKG_AUTHORS"),
+    env!("CARGO_PKG_DESCRIPTION")
+  );
   Ok(())
 }
 
@@ -219,10 +222,9 @@ fn show_details(cmd_name: &str) -> Result<(), String> {
   let doc = read_doit_file()?;
 
   let mut errors = Vec::<String>::new();
-
   match get_section(&doc, cmd_name) {
     | Ok(Some(table)) => {
-      let command = table["command"].as_str().expect("Missing command");
+      let command = table["command"].as_array().expect("Missing command");
 
       let description = if table.contains_key("description") {
         table["description"].as_str().unwrap_or("description must be a string")
@@ -246,11 +248,7 @@ fn show_details(cmd_name: &str) -> Result<(), String> {
       } else {
         String::default()
       };
-
-      println!("Alias: {}", cmd_name);
-      println!("Command: {}", command);
-      println!("Arguments:{}", args);
-      println!("Description: {}", description);
+      println!("Alias: {}\nCommand: {}\nArguments:{}\nDescription: {}\n", cmd_name, command, args, description);
     }
     | Ok(None) => errors.push(format!("Command {} not found", cmd_name)),
     | Err(e) => errors.push(format!("Command {} not found: {}", cmd_name, e)),
@@ -271,18 +269,17 @@ fn main() -> Result<(), String> {
   };
 
   let opts = {
-    let mut opts = Options::new();
-    opts.optflag("", "help", "print this help menu");
-    opts.optflag("", "cmds", "list all available commands");
-    opts.optflag("", "about", "about this program");
-    opts.optopt("", "show", "show details for command", "command");
-    opts
+    let mut opt = Options::new();
+    opt.optflag("", "help", "print this help menu");
+    opt.optflag("", "cmds", "list all available commands");
+    opt.optflag("", "about", "about this program");
+    opt.optopt("", "show", "show details for command", "command");
+    opt
   };
 
   let die = |e: Option<String>| {
-    match e {
-      | Some(e) => println!("{}", e),
-      | None => {}
+    if let Some(e) = e {
+      println!("{}", e);
     }
     let _ = print_usage(&program, &opts);
     exit(1);
@@ -309,7 +306,10 @@ fn main() -> Result<(), String> {
   }
 
   if matches.opt_present("cmds") {
-    list_cmds()?;
+    match list_cmds() {
+      | Ok(()) => return Ok(()),
+      | Err(e) => die(Some(e)),
+    };
   }
   let empty = String::default();
   let cmd_name = matches
