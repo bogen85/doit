@@ -6,9 +6,9 @@ use regex::Regex;
 use std::process::{exit, Command};
 use std::{env, fs::File, io::Read};
 use toml_edit::{Array, Document, Table};
+use users::{get_user_by_name, os::unix::UserExt};
 
 const ASCII_SUB1: &str = "\x1A\x01";
-const ASCII_SUB2: &str = "\x1A\x02";
 
 static HOME: Lazy<String> =
   Lazy::new(|| format!("{}/", dirs::home_dir().expect("home_dir undefined").to_str().expect("String").to_string()));
@@ -16,9 +16,10 @@ static HOME: Lazy<String> =
 static ENV0_RE: Lazy<Regex> = Lazy::new(|| Regex::new(r"!\{env:(.*?):(.*?)\}").unwrap());
 static ENV1_RE: Lazy<Regex> = Lazy::new(|| Regex::new(r"!\{env:(.*?)\}").unwrap());
 static VAR_RE: Lazy<Regex> = Lazy::new(|| Regex::new(r"!\{(.*?)\}").unwrap());
+static TILDE_USER_RE: Lazy<Regex> = Lazy::new(|| Regex::new(r"~([a-z_][a-z0-9_-]{0,30})?/").unwrap());
+static SECTION_KEY_RE: Lazy<Regex> = Lazy::new(|| Regex::new(r"^@(\d+)$").unwrap());
 
 static EMPTY_STRING: Lazy<String> = Lazy::new(|| String::default());
-
 const DOIT_FILE: &str = "doit.toml";
 
 fn read_doit_file() -> Document {
@@ -27,10 +28,39 @@ fn read_doit_file() -> Document {
   contents.parse::<Document>().expect("Unable to parse TOML")
 }
 
-fn render_template(table: &Table, template: &str) -> String {
-  let x0 = template.to_string().replace("~~", &ASCII_SUB1).replace("!!", &ASCII_SUB2);
+fn get_section<'a>(doc: &'a Document, name: &'a str) -> Option<&'a Table> {
+  if let Some(caps) = SECTION_KEY_RE.captures(name) {
+    doc
+      .as_table()
+      .iter()
+      .nth(caps.get(1)?.as_str().parse::<usize>().ok()? - 1)
+      .and_then(|(_, section)| section.as_table())
+  } else {
+    doc[name].as_table()
+  }
+}
 
-  let x1 = ENV0_RE.replace_all(&x0, |caps: &regex::Captures| {
+fn render_template(table: &Table, template: &str) -> String {
+  let x1 = {
+    let x0 = {
+      if !template.starts_with(":") || template.is_empty() {
+        return template.to_string();
+      }
+      let x = &template[1..];
+      if x.is_empty() {
+        return x.to_string();
+      }
+      x
+    }
+    .replace("!!", &ASCII_SUB1);
+
+    if x0.is_empty() {
+      return x0;
+    }
+    x0
+  };
+
+  let x2 = ENV0_RE.replace_all(&x1, |caps: &regex::Captures| {
     let evar = &caps[1];
     match env::var(&evar) {
       | Ok(value) => value,
@@ -38,7 +68,7 @@ fn render_template(table: &Table, template: &str) -> String {
     }
   });
 
-  let x2 = ENV1_RE.replace_all(&x1, |caps: &regex::Captures| {
+  let x3 = ENV1_RE.replace_all(&x2, |caps: &regex::Captures| {
     let evar = &caps[1];
     match env::var(&evar) {
       | Ok(value) => value,
@@ -46,20 +76,29 @@ fn render_template(table: &Table, template: &str) -> String {
     }
   });
 
-  VAR_RE
-    .replace_all(&x2, |caps: &regex::Captures| {
-      let key = &caps[1];
+  let x4 = VAR_RE.replace_all(&x3, |caps: &regex::Captures| {
+    let key = &caps[1];
 
-      match table.get(key) {
-        | Some(value) => format!("{}", value.as_str().expect("String")),
-        | None => {
-          panic!("(Unknown table key: {})", key)
-        }
+    match table.get(key) {
+      | Some(value) => format!("{}", value.as_str().expect("String")),
+      | None => {
+        panic!("(Unknown table key: {})", key)
+      }
+    }
+  });
+
+  TILDE_USER_RE
+    .replace_all(&x4, |caps: &regex::Captures| match caps.get(1) {
+      | None => HOME.to_string(),
+      | Some(matched) => {
+        let username = matched.as_str();
+        format!(
+          "{}/",
+          get_user_by_name(username).expect(&format!("user '{}' not found!", username)).home_dir().display()
+        )
       }
     })
-    .replace("~/", &HOME)
-    .replace(&ASCII_SUB1, "~")
-    .replace(&ASCII_SUB2, "!")
+    .replace(&ASCII_SUB1, "!")
 }
 
 fn run_cmd(args: Vec<String>) {
@@ -118,13 +157,12 @@ fn process_cmd(cmd_name: &str, table: &Table, args: &[String]) {
 
 fn primary(cmd_name: &str, args: &[String]) -> Result<(), String> {
   let doc = read_doit_file();
-  if doc.contains_key(&cmd_name) {
-    if let Some(table) = doc[&cmd_name].as_table() {
+  match get_section(&doc, cmd_name) {
+    | Some(table) => {
       process_cmd(&cmd_name, &table, &args);
+      Ok(())
     }
-    Ok(())
-  } else {
-    Err(format!("{} not found", cmd_name))
+    | None => Err(format!("{} not found", cmd_name)),
   }
 }
 

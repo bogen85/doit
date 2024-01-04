@@ -39,6 +39,7 @@ dependencies = [
  "once_cell",
  "regex",
  "toml_edit",
+ "users",
 ]
 
 [[package]]
@@ -75,6 +76,12 @@ dependencies = [
 [[package]]
 name = "libc"
 version = "0.2.151"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = ""
+
+[[package]]
+name = "log"
+version = "0.4.20"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = ""
 
@@ -147,6 +154,16 @@ name = "unicode-width"
 version = "0.1.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = ""
+
+[[package]]
+name = "users"
+version = "0.11.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = ""
+dependencies = [
+ "libc",
+ "log",
+]
 
 [[package]]
 name = "winnow"

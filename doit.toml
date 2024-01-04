@@ -4,25 +4,25 @@
 command = ["cargo", "install",  "--path",  "."]
 
 exe = "bin/doit"
-cargo-do = "~/bin/cargo-do"
+cargo-do = "~dwight/bin/cargo-do"
 
 post = [
-  ["cp", "-fav", "~/.cargo/!{exe}", "~/!{exe}"],
-  ["cp", "-fav", "~/.cargo/!{exe}", "!{cargo-do}"],
+  ["cp", "-fav", ":~/.cargo/!{exe}", ":~/!{exe}"],
+  ["cp", "-fav", ":~/.cargo/!{exe}", ":!{cargo-do}"],
 ]
 
 [clear-dot-cargo]
-command = ["rm", "-rf", "!{dir}"]
+command = ["rm", "-rf", ":!{dir}"]
 
 dir = "~/.cargo"
-pre = [["du", "-hs", "!{dir}"]]
-post = [["test", "!!", "-d", "!{dir}"]]
+pre = [["du", "-hs", ":!{dir}"]]
+post = [["test", "!", "-d", ":!{dir}"]]
 
 [whoami]
-command = ["echo", "!{env:USER}"]
+command = ["echo", ":!{env:USER}"]
 
 [env-test]
-command = ["echo", "!{env:UNKOWN:ok}"]
+command = ["echo", ":!{env:UNKOWN:ok}"]
 
 [fail1]
 command = ["ls", "-l"]
