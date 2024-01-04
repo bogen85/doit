@@ -21,10 +21,10 @@ static SECTION_KEY_RE: Lazy<Regex> = Lazy::new(|| Regex::new(r"^@(\d+)$").unwrap
 
 const DOIT_FILE: &str = "doit.toml";
 
-fn read_doit_file() -> Document {
+fn read_doit_file() -> Result<Document, String> {
   let mut contents = String::default();
   File::open(DOIT_FILE).expect("Unable to open file").read_to_string(&mut contents).expect("Unable to read file");
-  contents.parse::<Document>().expect("Unable to parse TOML")
+  Ok(contents.parse::<Document>().expect("Unable to parse TOML"))
 }
 
 fn get_section<'a>(doc: &'a Document, name: &'a str) -> Option<&'a Table> {
@@ -178,34 +178,38 @@ fn process_cmd(cmd_name: &str, table: &Table, args: &[String]) -> Result<(), Str
 }
 
 fn primary(cmd_name: &str, args: &[String]) -> Result<(), String> {
-  let doc = read_doit_file();
+  let doc = read_doit_file()?;
   match get_section(&doc, cmd_name) {
     | Some(table) => process_cmd(&cmd_name, &table, &args),
     | None => Err(format!("{} not found", cmd_name)),
   }
 }
 
-fn list_cmds() {
-  for (i, (cmd, _)) in read_doit_file().as_table().iter().enumerate() {
+fn list_cmds() -> Result<(), String> {
+  let doc = read_doit_file()?;
+  for (i, (cmd, _)) in doc.as_table().iter().enumerate() {
     println!("{}: {}", i + 1, cmd);
   }
+  Ok(())
 }
 
-fn print_usage(program: &str, opts: &Options) {
+fn print_usage(program: &str, opts: &Options) -> Result<(), String> {
   let brief = format!("Usage: {} <command> [args...]", program);
   println!("{}", opts.usage(&brief));
   println!("Commands are read from {} by default.", DOIT_FILE);
+  Ok(())
 }
 
-fn print_about(program: &str) {
+fn print_about(program: &str) -> Result<(), String> {
   println!("program: {}", program);
   println!("version: {}", env!("CARGO_PKG_VERSION"));
   println!("author: {}", env!("CARGO_PKG_AUTHORS"));
   println!("about: {}", env!("CARGO_PKG_DESCRIPTION"));
+  Ok(())
 }
 
 fn show_details(cmd_name: &str) -> Result<(), String> {
-  let doc = read_doit_file();
+  let doc = read_doit_file()?;
 
   if !doc.contains_key(cmd_name) {
     return Err(format!("{} not found", cmd_name));
@@ -252,7 +256,7 @@ fn show_details(cmd_name: &str) -> Result<(), String> {
   }
 }
 
-fn main() {
+fn main() -> Result<(), String> {
   let (program, args) = {
     let args0: Vec<_> = env::args().collect();
     let remove = vec!["doit", "do", "--"];
@@ -274,7 +278,7 @@ fn main() {
       | Some(e) => println!("{}", e),
       | None => {}
     }
-    print_usage(&program, &opts);
+    let _ = print_usage(&program, &opts);
     exit(1);
   };
 
@@ -293,13 +297,13 @@ fn main() {
 
   if let Some(cmd_name) = matches.opt_str("show") {
     match show_details(&cmd_name) {
-      | Ok(()) => return,
+      | Ok(()) => return Ok(()),
       | Err(e) => die(Some(e)),
     };
   }
 
   if matches.opt_present("cmds") {
-    return list_cmds();
+    list_cmds()?;
   }
   let empty = String::default();
   let cmd_name = matches
@@ -312,8 +316,8 @@ fn main() {
     .clone();
 
   let args = if matches.free.len() > 1 { matches.free[1..].to_vec() } else { vec![] };
-  match primary(&cmd_name, &args) {
-    | Ok(()) => return,
-    | Err(e) => die(Some(e)),
-  };
+  if let Err(e) = primary(&cmd_name, &args) {
+    die(Some(e));
+  }
+  Ok(())
 }
