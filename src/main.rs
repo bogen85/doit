@@ -13,9 +13,9 @@ const ASCII_SUB1: &str = "\x1A\x01";
 static HOME: Lazy<String> =
   Lazy::new(|| format!("{}/", dirs::home_dir().expect("home_dir undefined").to_str().expect("String").to_string()));
 
-static ENV0_RE: Lazy<Regex> = Lazy::new(|| Regex::new(r"!\{env:(.*?):(.*?)\}").unwrap());
-static ENV1_RE: Lazy<Regex> = Lazy::new(|| Regex::new(r"!\{env:(.*?)\}").unwrap());
-static VAR_RE: Lazy<Regex> = Lazy::new(|| Regex::new(r"!\{(.*?)\}").unwrap());
+static ENV0_RE: Lazy<Regex> = Lazy::new(|| Regex::new(r"%env:(.*?):(.*?)%").unwrap());
+static ENV1_RE: Lazy<Regex> = Lazy::new(|| Regex::new(r"%env:(.*?)%").unwrap());
+static VAR_RE: Lazy<Regex> = Lazy::new(|| Regex::new(r"%(.*?)%").unwrap());
 static TILDE_USER_RE: Lazy<Regex> = Lazy::new(|| Regex::new(r"~([a-z_][a-z0-9_-]{0,30})?/").unwrap());
 static SECTION_KEY_RE: Lazy<Regex> = Lazy::new(|| Regex::new(r"^@(\d+)$").unwrap());
 
@@ -57,7 +57,7 @@ fn render_template(table: &Table, template: &str) -> Result<String, String> {
       }
       x
     }
-    .replace("!!", &ASCII_SUB1);
+    .replace("%%", &ASCII_SUB1);
 
     if x0.is_empty() {
       return Ok(x0);
@@ -118,7 +118,7 @@ fn render_template(table: &Table, template: &str) -> Result<String, String> {
           )
         }
       })
-      .replace(&ASCII_SUB1, "!"),
+      .replace(&ASCII_SUB1, "%"),
   )
 }
 
