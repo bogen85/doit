@@ -27,15 +27,21 @@ fn read_doit_file() -> Result<Document, String> {
   Ok(contents.parse::<Document>().expect("Unable to parse TOML"))
 }
 
-fn get_section<'a>(doc: &'a Document, name: &'a str) -> Option<&'a Table> {
+fn get_section<'a>(doc: &'a Document, name: &'a str) -> Result<Option<&'a Table>, String> {
   if let Some(caps) = SECTION_KEY_RE.captures(name) {
-    doc
-      .as_table()
-      .iter()
-      .nth(caps.get(1)?.as_str().parse::<usize>().ok()? - 1)
-      .and_then(|(_, section)| section.as_table())
+    Ok(
+      doc
+        .as_table()
+        .iter()
+        .nth(caps.get(1).ok_or("RE failed")?.as_str().parse::<usize>().ok().ok_or("INDEX")? - 1)
+        .and_then(|(_, section)| section.as_table()),
+    )
   } else {
-    doc[name].as_table()
+    if doc.contains_key(name) {
+      Ok(doc[name].as_table())
+    } else {
+      Err(format!("{} not found in the {}", name, DOIT_FILE))
+    }
   }
 }
 
@@ -180,8 +186,9 @@ fn process_cmd(cmd_name: &str, table: &Table, args: &[String]) -> Result<(), Str
 fn primary(cmd_name: &str, args: &[String]) -> Result<(), String> {
   let doc = read_doit_file()?;
   match get_section(&doc, cmd_name) {
-    | Some(table) => process_cmd(&cmd_name, &table, &args),
-    | None => Err(format!("{} not found", cmd_name)),
+    | Ok(Some(table)) => process_cmd(&cmd_name, &table, &args),
+    | Err(e) => Err(format!("{} not found: {}", cmd_name, e)),
+    | Ok(None) => Err(format!("{} not found", cmd_name)),
   }
 }
 
@@ -211,43 +218,42 @@ fn print_about(program: &str) -> Result<(), String> {
 fn show_details(cmd_name: &str) -> Result<(), String> {
   let doc = read_doit_file()?;
 
-  if !doc.contains_key(cmd_name) {
-    return Err(format!("{} not found", cmd_name));
-  }
-
   let mut errors = Vec::<String>::new();
 
-  if let Some(table) = doc[cmd_name].as_table() {
-    let command = table["command"].as_str().expect("Missing command");
-    let description = if table.contains_key("description") {
-      table["description"].as_str().unwrap_or("description must be a string")
-    } else {
-      "No description provided"
-    };
+  match get_section(&doc, cmd_name) {
+    | Ok(Some(table)) => {
+      let command = table["command"].as_str().expect("Missing command");
 
-    let args = if table.contains_key("args") {
-      let toml_args = table["args"].as_array();
-      toml_args
-        .iter()
-        .map(|arg| match render_template(table, &arg.to_string()) {
-          | Ok(s) => s,
-          | Err(e) => {
-            errors.push(format!("{}", e));
-            "????".to_string()
-          }
-        })
-        .collect::<Vec<_>>()
-        .join(" ")
-    } else {
-      String::default()
-    };
+      let description = if table.contains_key("description") {
+        table["description"].as_str().unwrap_or("description must be a string")
+      } else {
+        "No description provided"
+      };
 
-    println!("Alias: {}", cmd_name);
-    println!("Command: {}", command);
-    println!("Arguments:{}", args);
-    println!("Description: {}", description);
-  } else {
-    errors.push(format!("Command {} not found", cmd_name));
+      let args = if table.contains_key("args") {
+        let toml_args = table["args"].as_array();
+        toml_args
+          .iter()
+          .map(|arg| match render_template(table, &arg.to_string()) {
+            | Ok(s) => s,
+            | Err(e) => {
+              errors.push(format!("{}", e));
+              "????".to_string()
+            }
+          })
+          .collect::<Vec<_>>()
+          .join(" ")
+      } else {
+        String::default()
+      };
+
+      println!("Alias: {}", cmd_name);
+      println!("Command: {}", command);
+      println!("Arguments:{}", args);
+      println!("Description: {}", description);
+    }
+    | Ok(None) => errors.push(format!("Command {} not found", cmd_name)),
+    | Err(e) => errors.push(format!("Command {} not found: {}", cmd_name, e)),
   }
   if !errors.is_empty() {
     Err(errors.join("\n"))
