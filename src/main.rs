@@ -68,8 +68,8 @@ fn render_template(table: &Table, template: &str) -> Result<String, String> {
   let x2 = ENV0_RE.replace_all(&x1, |caps: &regex::Captures| {
     let evar = &caps[1];
     match env::var(&evar) {
-      | Ok(value) => value,
-      | Err(_) => caps[2].to_string(),
+      Ok(value) => value,
+      Err(_) => caps[2].to_string(),
     }
   });
 
@@ -78,8 +78,8 @@ fn render_template(table: &Table, template: &str) -> Result<String, String> {
   let x3 = ENV1_RE.replace_all(&x2, |caps: &regex::Captures| {
     let evar = &caps[1];
     match env::var(&evar) {
-      | Ok(value) => value,
-      | Err(e) => {
+      Ok(value) => value,
+      Err(e) => {
         errors.push(format!("(Unknown ENV variable: {}: {}", evar, e));
         String::default()
       }
@@ -94,8 +94,8 @@ fn render_template(table: &Table, template: &str) -> Result<String, String> {
     let key = &caps[1];
 
     match table.get(key) {
-      | Some(value) => format!("{}", value.as_str().expect("String")),
-      | None => {
+      Some(value) => format!("{}", value.as_str().expect("String")),
+      None => {
         errors.push(format!("(Unknown table key: {})", key));
         String::default()
       }
@@ -109,8 +109,8 @@ fn render_template(table: &Table, template: &str) -> Result<String, String> {
   Ok(
     TILDE_USER_RE
       .replace_all(&x4, |caps: &regex::Captures| match caps.get(1) {
-        | None => HOME.to_string(),
-        | Some(matched) => {
+        None => HOME.to_string(),
+        Some(matched) => {
           let username = matched.as_str();
           format!(
             "{}/",
@@ -186,9 +186,9 @@ fn process_cmd(cmd_name: &str, table: &Table, args: &[String]) -> Result<(), Str
 fn primary(cmd_name: &str, args: &[String]) -> Result<(), String> {
   let doc = read_doit_file()?;
   match get_section(&doc, cmd_name) {
-    | Ok(Some(table)) => process_cmd(&cmd_name, &table, &args),
-    | Err(e) => Err(format!("{} not found: {}", cmd_name, e)),
-    | Ok(None) => Err(format!("{} not found", cmd_name)),
+    Ok(Some(table)) => process_cmd(&cmd_name, &table, &args),
+    Err(e) => Err(format!("{} not found: {}", cmd_name, e)),
+    Ok(None) => Err(format!("{} not found", cmd_name)),
   }
 }
 
@@ -223,7 +223,7 @@ fn show_details(cmd_name: &str) -> Result<(), String> {
 
   let mut errors = Vec::<String>::new();
   match get_section(&doc, cmd_name) {
-    | Ok(Some(table)) => {
+    Ok(Some(table)) => {
       let command = table["command"].as_array().expect("Missing command");
 
       let description = if table.contains_key("description") {
@@ -237,8 +237,8 @@ fn show_details(cmd_name: &str) -> Result<(), String> {
         toml_args
           .iter()
           .map(|arg| match render_template(table, &arg.to_string()) {
-            | Ok(s) => s,
-            | Err(e) => {
+            Ok(s) => s,
+            Err(e) => {
               errors.push(format!("{}", e));
               "????".to_string()
             }
@@ -250,8 +250,8 @@ fn show_details(cmd_name: &str) -> Result<(), String> {
       };
       println!("Alias: {}\nCommand: {}\nArguments:{}\nDescription: {}\n", cmd_name, command, args, description);
     }
-    | Ok(None) => errors.push(format!("Command {} not found", cmd_name)),
-    | Err(e) => errors.push(format!("Command {} not found: {}", cmd_name, e)),
+    Ok(None) => errors.push(format!("Command {} not found", cmd_name)),
+    Err(e) => errors.push(format!("Command {} not found: {}", cmd_name, e)),
   }
   if !errors.is_empty() {
     Err(errors.join("\n"))
@@ -286,8 +286,8 @@ fn main() -> Result<(), String> {
   };
 
   let matches = match opts.parse(&args) {
-    | Ok(m) => m,
-    | Err(e) => die(Some(e.to_string())),
+    Ok(m) => m,
+    Err(e) => die(Some(e.to_string())),
   };
 
   if matches.opt_present("help") {
@@ -300,15 +300,15 @@ fn main() -> Result<(), String> {
 
   if let Some(cmd_name) = matches.opt_str("show") {
     match show_details(&cmd_name) {
-      | Ok(()) => return Ok(()),
-      | Err(e) => die(Some(e)),
+      Ok(()) => return Ok(()),
+      Err(e) => die(Some(e)),
     };
   }
 
   if matches.opt_present("cmds") {
     match list_cmds() {
-      | Ok(()) => return Ok(()),
-      | Err(e) => die(Some(e)),
+      Ok(()) => return Ok(()),
+      Err(e) => die(Some(e)),
     };
   }
   let empty = String::default();
