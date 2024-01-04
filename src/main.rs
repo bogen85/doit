@@ -19,11 +19,10 @@ static VAR_RE: Lazy<Regex> = Lazy::new(|| Regex::new(r"!\{(.*?)\}").unwrap());
 static TILDE_USER_RE: Lazy<Regex> = Lazy::new(|| Regex::new(r"~([a-z_][a-z0-9_-]{0,30})?/").unwrap());
 static SECTION_KEY_RE: Lazy<Regex> = Lazy::new(|| Regex::new(r"^@(\d+)$").unwrap());
 
-static EMPTY_STRING: Lazy<String> = Lazy::new(|| String::default());
 const DOIT_FILE: &str = "doit.toml";
 
 fn read_doit_file() -> Document {
-  let mut contents = String::new();
+  let mut contents = String::default();
   File::open(DOIT_FILE).expect("Unable to open file").read_to_string(&mut contents).expect("Unable to read file");
   contents.parse::<Document>().expect("Unable to parse TOML")
 }
@@ -40,22 +39,22 @@ fn get_section<'a>(doc: &'a Document, name: &'a str) -> Option<&'a Table> {
   }
 }
 
-fn render_template(table: &Table, template: &str) -> String {
+fn render_template(table: &Table, template: &str) -> Result<String, String> {
   let x1 = {
     let x0 = {
       if !template.starts_with(":") || template.is_empty() {
-        return template.to_string();
+        return Ok(template.to_string());
       }
       let x = &template[1..];
       if x.is_empty() {
-        return x.to_string();
+        return Ok(x.to_string());
       }
       x
     }
     .replace("!!", &ASCII_SUB1);
 
     if x0.is_empty() {
-      return x0;
+      return Ok(x0);
     }
     x0
   };
@@ -68,13 +67,22 @@ fn render_template(table: &Table, template: &str) -> String {
     }
   });
 
+  let mut errors = Vec::<String>::new();
+
   let x3 = ENV1_RE.replace_all(&x2, |caps: &regex::Captures| {
     let evar = &caps[1];
     match env::var(&evar) {
       | Ok(value) => value,
-      | Err(_) => panic!("(Unknown ENV variable: {})", evar),
+      | Err(e) => {
+        errors.push(format!("(Unknown ENV variable: {}: {}", evar, e));
+        String::default()
+      }
     }
   });
+
+  if !errors.is_empty() {
+    return Err(errors.join("\n"));
+  }
 
   let x4 = VAR_RE.replace_all(&x3, |caps: &regex::Captures| {
     let key = &caps[1];
@@ -82,86 +90,97 @@ fn render_template(table: &Table, template: &str) -> String {
     match table.get(key) {
       | Some(value) => format!("{}", value.as_str().expect("String")),
       | None => {
-        panic!("(Unknown table key: {})", key)
+        errors.push(format!("(Unknown table key: {})", key));
+        String::default()
       }
     }
   });
 
-  TILDE_USER_RE
-    .replace_all(&x4, |caps: &regex::Captures| match caps.get(1) {
-      | None => HOME.to_string(),
-      | Some(matched) => {
-        let username = matched.as_str();
-        format!(
-          "{}/",
-          get_user_by_name(username).expect(&format!("user '{}' not found!", username)).home_dir().display()
-        )
-      }
-    })
-    .replace(&ASCII_SUB1, "!")
+  if !errors.is_empty() {
+    return Err(errors.join("\n"));
+  }
+
+  Ok(
+    TILDE_USER_RE
+      .replace_all(&x4, |caps: &regex::Captures| match caps.get(1) {
+        | None => HOME.to_string(),
+        | Some(matched) => {
+          let username = matched.as_str();
+          format!(
+            "{}/",
+            get_user_by_name(username).expect(&format!("user '{}' not found!", username)).home_dir().display()
+          )
+        }
+      })
+      .replace(&ASCII_SUB1, "!"),
+  )
 }
 
-fn run_cmd(args: Vec<String>) {
+fn run_cmd(args: Vec<String>) -> Result<(), String> {
   let exit_status = {
     let mut child =
       Command::new(&args[0]).args(&args[1..]).spawn().expect(&format!("Failed to execute command: {:?}", args));
     child.wait()
   };
   let rc = exit_status.expect("RC").code().unwrap_or(1);
-
   if rc != 0 {
-    let err = format!("exit status: {}", rc);
-    eprintln!("{:?}\nfailed with {}", args, err);
-    panic!("{}", err);
+    Err(format!("{:?}\nfailed with exit status: {}", args, rc))
+  } else {
+    Ok(())
   }
 }
 
-fn run_argv(vec_in: &Array, which: &str, table: &Table, index: usize, args: &[String]) {
+fn run_argv(vec_in: &Array, which: &str, table: &Table, index: usize, args: &[String]) -> Result<(), String> {
   run_cmd({
     if vec_in.len() < 1 {
-      panic!("{}[{}] arg vector is empty", which, index);
+      return Err(format!("{}[{}] arg vector is empty", which, index));
     }
     let mut vec: Vec<String> = Vec::new();
     for arg in vec_in {
       vec.push(render_template(
         table,
         &arg.as_str().expect(&format!("Invalid argument for {}:[{}]", which, index)).to_string(),
-      ));
+      )?);
     }
     vec.extend_from_slice(args);
     vec
-  });
+  })
 }
 
-fn process_pre_post_cmd(which: &str, cmd_name: &str, table: &Table) {
+fn process_pre_post_cmd(which: &str, cmd_name: &str, table: &Table) -> Result<(), String> {
   let sub_args = table[which].as_array().expect(&format!("{} is not an array", which));
 
   for (index, args_in) in sub_args.iter().enumerate() {
     println!("Running command {}:{}:{}", cmd_name, which, index + 1);
-    run_argv(args_in.as_array().expect(&format!("{}[{}] is not an array", which, index)), which, table, index, &[]);
+    run_argv(args_in.as_array().expect(&format!("{}[{}] is not an array", which, index)), which, table, index, &[])?;
   }
+  Ok(())
 }
 
-fn process_cmd(cmd_name: &str, table: &Table, args: &[String]) {
+fn process_cmd(cmd_name: &str, table: &Table, args: &[String]) -> Result<(), String> {
   if table.contains_key("pre") {
-    process_pre_post_cmd("pre", cmd_name, &table);
+    process_pre_post_cmd("pre", cmd_name, &table)?;
   }
 
   println!("Running command {}", cmd_name);
-  run_argv(table["command"].as_array().expect(&format!("{}: missing command array", cmd_name)), "main", table, 0, args);
+  run_argv(
+    table["command"].as_array().expect(&format!("{}: missing command array", cmd_name)),
+    "main",
+    table,
+    0,
+    args,
+  )?;
 
   if table.contains_key("post") {
-    process_pre_post_cmd("post", cmd_name, &table);
+    process_pre_post_cmd("post", cmd_name, &table)?;
   }
+  Ok(())
 }
 
 fn primary(cmd_name: &str, args: &[String]) -> Result<(), String> {
   let doc = read_doit_file();
   match get_section(&doc, cmd_name) {
-    | Some(table) => {
-      process_cmd(&cmd_name, &table, &args);
-      Ok(())
-    }
+    | Some(table) => process_cmd(&cmd_name, &table, &args),
     | None => Err(format!("{} not found", cmd_name)),
   }
 }
@@ -192,6 +211,8 @@ fn show_details(cmd_name: &str) -> Result<(), String> {
     return Err(format!("{} not found", cmd_name));
   }
 
+  let mut errors = Vec::<String>::new();
+
   if let Some(table) = doc[cmd_name].as_table() {
     let command = table["command"].as_str().expect("Missing command");
     let description = if table.contains_key("description") {
@@ -199,11 +220,22 @@ fn show_details(cmd_name: &str) -> Result<(), String> {
     } else {
       "No description provided"
     };
+
     let args = if table.contains_key("args") {
       let toml_args = table["args"].as_array();
-      toml_args.iter().map(|arg| render_template(table, &arg.to_string())).collect::<Vec<_>>().join(" ")
+      toml_args
+        .iter()
+        .map(|arg| match render_template(table, &arg.to_string()) {
+          | Ok(s) => s,
+          | Err(e) => {
+            errors.push(format!("{}", e));
+            "????".to_string()
+          }
+        })
+        .collect::<Vec<_>>()
+        .join(" ")
     } else {
-      String::new()
+      String::default()
     };
 
     println!("Alias: {}", cmd_name);
@@ -211,9 +243,13 @@ fn show_details(cmd_name: &str) -> Result<(), String> {
     println!("Arguments:{}", args);
     println!("Description: {}", description);
   } else {
-    println!("Alias not found");
+    errors.push(format!("Command {} not found", cmd_name));
   }
-  Ok(())
+  if !errors.is_empty() {
+    Err(errors.join("\n"))
+  } else {
+    Ok(())
+  }
 }
 
 fn main() {
@@ -265,12 +301,13 @@ fn main() {
   if matches.opt_present("cmds") {
     return list_cmds();
   }
+  let empty = String::default();
   let cmd_name = matches
     .free
     .get(0)
     .unwrap_or_else(|| {
       die(None);
-      &EMPTY_STRING
+      &empty
     })
     .clone();
 
