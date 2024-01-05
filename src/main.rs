@@ -111,11 +111,16 @@ fn render_template(table: &Table, template: &str) -> Result<String, String> {
 }
 
 fn run_cmd(args: Vec<String>) -> Result<(), String> {
+  let ignore_rc = &args[0][..1] == "+";
   let exit_status = {
+    let exe = if ignore_rc { &args[0][1..] } else { &args[0] };
     let mut child =
-      Command::new(&args[0]).args(&args[1..]).spawn().expect(&format!("Failed to execute command: {:?}", args));
+      Command::new(exe).args(&args[1..]).spawn().expect(&format!("Failed to execute command: {:?}", args));
     child.wait()
   };
+  if ignore_rc {
+    return Ok(());
+  }
   let rc = exit_status.expect("RC").code().unwrap_or(1);
   if rc != 0 {
     Err(format!("{:?}\nfailed with exit status: {}", args, rc))
