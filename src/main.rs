@@ -68,53 +68,46 @@ fn render_template(table: &Table, template: &str) -> Result<String, String> {
     }
   });
 
-  let mut errors = Vec::<String>::new();
+  let errors = std::cell::RefCell::new(Vec::<String>::new());
+  let push_error = |e: String| -> String {
+    errors.borrow_mut().push(e);
+    String::default()
+  };
 
   let x3 = ENV1_RE.replace_all(&x2, |caps: &regex::Captures| {
     let evar = &caps[1];
     match env::var(&evar) {
       Ok(value) => value,
-      Err(e) => {
-        errors.push(format!("(Unknown ENV variable: {}: {}", evar, e));
-        String::default()
-      }
+      Err(e) => push_error(format!("(Unknown ENV variable: {}: {}", evar, e)),
     }
   });
-
-  if !errors.is_empty() {
-    return Err(errors.join("\n"));
-  }
 
   let x4 = VAR_RE.replace_all(&x3, |caps: &regex::Captures| {
     let key = &caps[1];
 
     match table.get(key) {
+      None => push_error(format!("(Unknown table key: {})", key)),
       Some(value) => format!("{}", value.as_str().expect("String")),
-      None => {
-        errors.push(format!("(Unknown table key: {})", key));
-        String::default()
-      }
     }
   });
 
-  if !errors.is_empty() {
-    return Err(errors.join("\n"));
-  }
-
-  Ok(
-    TILDE_USER_RE
-      .replace_all(&x4, |caps: &regex::Captures| match caps.get(1) {
-        None => HOME.to_string(),
-        Some(matched) => {
-          let username = matched.as_str();
-          format!(
-            "{}/",
-            get_user_by_name(username).expect(&format!("user '{}' not found!", username)).home_dir().display()
-          )
+  let x5 = TILDE_USER_RE.replace_all(&x4, |caps: &regex::Captures| match caps.get(1) {
+    None => HOME.to_string(),
+    Some(matched) => {
+      let username = matched.as_str();
+      format!(
+        "{}/",
+        match get_user_by_name(username) {
+          None => push_error(format!("user '{}' not found!", username)),
+          Some(user) => user.home_dir().display().to_string(),
         }
-      })
-      .replace(&ASCII_SUB1, "%"),
-  )
+      )
+    }
+  });
+  if !errors.borrow().is_empty() {
+    return Err(errors.borrow().join("\n"));
+  }
+  Ok(x5.replace(&ASCII_SUB1, "%"))
 }
 
 fn run_cmd(args: Vec<String>) -> Result<(), String> {

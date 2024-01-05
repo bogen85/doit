@@ -2,7 +2,7 @@
 
 [install]
 exe = "bin/doit"
-cargo-do = "~dwight/bin/cargo-do"
+cargo-do = "~/bin/cargo-do"
 
 command = ["cargo", "install",  "--path",  "."]
 post = [["cp", "-fav", ":~/.cargo/%exe%", ":~/%exe%"],
