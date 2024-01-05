@@ -162,8 +162,8 @@ fn run_cmd(args: Vec<String>) -> Result<(), String> {
 
   let (cmd, argv) = if ignore_rc { (&args[1], &args[2..]) } else { (&args[0], &args[1..]) };
 
-  match cmd.as_str() {
-    cmd if cmd.starts_with("&") => run_builtin(&cmd[1..], argv),
+  match cmd {
+    _builtin if cmd.starts_with("&") => run_builtin(&cmd[1..], argv),
     _ => {
       let mut child = Command::new(cmd).args(argv).spawn().map_err(|e| e.to_string())?;
       let exit_status = child.wait();
