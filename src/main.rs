@@ -3,8 +3,13 @@ use dirs;
 use getopts::Options;
 use once_cell::sync::Lazy;
 use regex::Regex;
-use std::process::{exit, Command};
-use std::{env, fs::File, io::Read};
+use std::{
+  env,
+  fs::{write, File},
+  io::Read,
+  path::Path,
+  process::{exit, Command},
+};
 use toml_edit::{Array, Document, Table};
 use users::{get_user_by_name, os::unix::UserExt};
 
@@ -21,24 +26,40 @@ static SECTION_KEY_RE: Lazy<Regex> = Lazy::new(|| Regex::new(r"^@(\d+)$").unwrap
 
 const DOIT_FILE: &str = "doit.toml";
 
+const DEFAULT_COMMANDS: &str = include_str!("../default_commands.toml");
+
 fn read_doit_file() -> Result<Document, String> {
-  let mut contents = String::default();
-  File::open(DOIT_FILE).expect("Unable to open file").read_to_string(&mut contents).expect("Unable to read file");
-  Ok(contents.parse::<Document>().expect("Unable to parse TOML"))
+  let full_contents = if Path::new(DOIT_FILE).exists() {
+    let mut contents = String::default();
+
+    File::open(DOIT_FILE).map_err(|e| e.to_string())?.read_to_string(&mut contents).map_err(|e| e.to_string())?;
+
+    format!("{}{}", DEFAULT_COMMANDS, contents)
+  } else {
+    DEFAULT_COMMANDS.to_string()
+  };
+  Ok(full_contents.parse::<Document>().map_err(|e| e.to_string())?)
 }
 
-fn get_section<'a>(doc: &'a Document, name: &'a str) -> Result<Option<&'a Table>, String> {
+fn get_section<'a>(doc: &'a Document, name: &'a str) -> Result<(Option<&'a Table>, String), String> {
   if let Some(caps) = SECTION_KEY_RE.captures(name) {
-    Ok(
-      doc
-        .as_table()
-        .iter()
-        .nth(caps.get(1).ok_or("RE failed")?.as_str().parse::<usize>().ok().ok_or("INDEX")? - 1)
-        .and_then(|(_, section)| section.as_table()),
-    )
+    Ok({
+      let mut actual_key = String::default();
+      (
+        doc
+          .as_table()
+          .iter()
+          .nth(caps.get(1).ok_or("RE failed")?.as_str().parse::<usize>().ok().ok_or("INDEX")? - 1)
+          .and_then(|(key, section)| {
+            actual_key = key.to_string();
+            section.as_table()
+          }),
+        actual_key,
+      )
+    })
   } else {
     if doc.contains_key(name) {
-      Ok(doc[name].as_table())
+      Ok((doc[name].as_table(), name.to_string()))
     } else {
       Err(format!("{} not found in the {}", name, DOIT_FILE))
     }
@@ -91,7 +112,10 @@ fn render_template(table: &Table, template: &str) -> Result<String, String> {
 
     match table.get(key) {
       None => push_error(format!("(Unknown table key: {})", key)),
-      Some(value) => format!("{}", value.as_str().expect("String")),
+      Some(value) => match value.as_str() {
+        Some(str_value) => format!("{}", str_value),
+        None => push_error(format!("(Failed to convert value to string for key: {})", key)),
+      },
     }
   });
 
@@ -124,21 +148,22 @@ fn run_cmd(args: Vec<String>) -> Result<(), String> {
     return Ok(());
   }
 
-  let exit_status = {
-    let (exe, argv) = if ignore_rc { (&args[1], &args[2..]) } else { (&args[0], &args[1..]) };
-    let mut child = Command::new(exe).args(argv).spawn().expect(&format!("Failed to execute command: {:?}", args));
-    child.wait()
-  };
+  let (cmd, argv) = if ignore_rc { (&args[1], &args[2..]) } else { (&args[0], &args[1..]) };
 
-  if ignore_rc {
-    return Ok(());
-  }
+  match cmd {
+    //let data = "some content";
+    //std::fs::write("some-file", data).expect("Unable to write file");
+    _ => {
+      let mut child = Command::new(cmd).args(argv).spawn().map_err(|e| e.to_string())?;
+      let exit_status = child.wait();
 
-  let rc = exit_status.expect("RC").code().unwrap_or(1);
-  if rc != 0 {
-    Err(format!("{:?}\nfailed with exit status: {}", args, rc))
-  } else {
-    Ok(())
+      let rc = if ignore_rc { 0 } else { exit_status.map_err(|e| e.to_string())?.code().unwrap_or(1) };
+      if rc != 0 {
+        Err(format!("{:?}\nfailed with exit status: {}", args, rc))
+      } else {
+        Ok(())
+      }
+    }
   }
 }
 
@@ -148,10 +173,16 @@ fn run_argv(vec_in: &Array, which: &str, table: &Table, index: usize, args: &[St
       return Err(format!("{}[{}] arg vector is empty", which, index));
     }
     let mut vec: Vec<String> = Vec::new();
+
     for arg in vec_in {
       vec.push(render_template(
         table,
-        &arg.as_str().expect(&format!("Invalid argument for {}:[{}]", which, index)).to_string(),
+        match &arg.as_str() {
+          Some(x) => x,
+          None => {
+            return Err(format!("Unable to extract argument {} as a string", arg));
+          }
+        },
       )?);
     }
     vec.extend_from_slice(args);
@@ -160,13 +191,55 @@ fn run_argv(vec_in: &Array, which: &str, table: &Table, index: usize, args: &[St
 }
 
 fn process_pre_post_cmd(which: &str, cmd_name: &str, table: &Table) -> Result<(), String> {
-  let sub_args = table[which].as_array().expect(&format!("{} is not an array", which));
+  let sub_args = match table[which].as_array() {
+    Some(args) => args,
+    None => {
+      return Err(format!("{} is not an array", which));
+    }
+  };
 
   for (index, args_in) in sub_args.iter().enumerate() {
     println!("Running command {}:{}:{}", cmd_name, which, index + 1);
-    run_argv(args_in.as_array().expect(&format!("{}[{}] is not an array", which, index)), which, table, index, &[])?;
+    run_argv(
+      match args_in.as_array() {
+        Some(args) => args,
+        None => {
+          return Err(format!("{}[{}] is not an array", which, index));
+        }
+      },
+      which,
+      table,
+      index,
+      &[],
+    )?;
   }
   Ok(())
+}
+/*
+fn get_command<'a>(cmd_name: &str, table: &'a Table) -> Result<&'a Array, String> {
+  Ok(
+    match match table.get("command") {
+      Some(argv) => argv,
+      None => {
+        return Err(format!("{}: missing command array", cmd_name));
+      }
+    }
+    .as_array()
+    {
+      Some(argv) => argv,
+      None => {
+        return Err(format!("{}: command is not an array", cmd_name));
+      }
+    },
+  )
+}
+*/
+
+fn get_command<'a>(cmd_name: &str, table: &'a Table) -> Result<&'a Array, String> {
+  table
+    .get("command")
+    .ok_or_else(|| format!("{}: missing command array", cmd_name))
+    .and_then(|argv| argv.as_array().ok_or_else(|| format!("{}: command is not an array", cmd_name)))
 }
 
 fn process_cmd(cmd_name: &str, table: &Table, args: &[String]) -> Result<(), String> {
@@ -175,13 +248,7 @@ fn process_cmd(cmd_name: &str, table: &Table, args: &[String]) -> Result<(), Str
   }
 
   println!("Running command {}", cmd_name);
-  run_argv(
-    table["command"].as_array().expect(&format!("{}: missing command array", cmd_name)),
-    "main",
-    table,
-    0,
-    args,
-  )?;
+  run_argv(get_command(cmd_name, table)?, "main", table, 0, args)?;
 
   if table.contains_key("post") {
     process_pre_post_cmd("post", cmd_name, &table)?;
@@ -192,16 +259,16 @@ fn process_cmd(cmd_name: &str, table: &Table, args: &[String]) -> Result<(), Str
 fn primary(cmd_name: &str, args: &[String]) -> Result<(), String> {
   let doc = read_doit_file()?;
   match get_section(&doc, cmd_name) {
-    Ok(Some(table)) => process_cmd(&cmd_name, &table, &args),
+    Ok((Some(table), actual_cmd)) => process_cmd(&actual_cmd, &table, &args),
     Err(e) => Err(format!("{} not found: {}", cmd_name, e)),
-    Ok(None) => Err(format!("{} not found", cmd_name)),
+    Ok((None, _)) => Err(format!("{} not found", cmd_name)),
   }
 }
 
 fn list_cmds() -> Result<(), String> {
   let doc = read_doit_file()?;
   for (i, (cmd, _)) in doc.as_table().iter().enumerate() {
-    println!("{}: {}", i + 1, cmd);
+    println!("@{} : {}", i + 1, cmd);
   }
   Ok(())
 }
@@ -229,14 +296,13 @@ fn show_details(cmd_name: &str) -> Result<(), String> {
 
   let mut errors = Vec::<String>::new();
   match get_section(&doc, cmd_name) {
-    Ok(Some(table)) => {
-      let command = table["command"].as_array().expect("Missing command");
+    Ok((Some(table), actual_cmd)) => {
+      let command = get_command(cmd_name, table)?;
 
-      let description = if table.contains_key("description") {
-        table["description"].as_str().unwrap_or("description must be a string")
-      } else {
-        "No description provided"
-      };
+      let description = table
+        .get("description")
+        .ok_or_else(|| "No description provided".to_string())
+        .and_then(|x| x.as_str().ok_or_else(|| "description must be a string".to_string()))?;
 
       let args = if table.contains_key("args") {
         let toml_args = table["args"].as_array();
@@ -254,9 +320,12 @@ fn show_details(cmd_name: &str) -> Result<(), String> {
       } else {
         String::default()
       };
-      println!("Alias: {}\nCommand: {}\nArguments:{}\nDescription: {}\n", cmd_name, command, args, description);
+      println!(
+        "Given: {}\nActual: {}\nCommand: {}\nArguments:{}\nDescription: {}\n",
+        cmd_name, actual_cmd, command, args, description
+      );
     }
-    Ok(None) => errors.push(format!("Command {} not found", cmd_name)),
+    Ok((None, _)) => errors.push(format!("Command {} not found", cmd_name)),
     Err(e) => errors.push(format!("Command {} not found: {}", cmd_name, e)),
   }
   if !errors.is_empty() {

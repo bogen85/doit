@@ -1,0 +1,8 @@
+[clear-dot-cargo]
+command = ["rm", "-rf", ":%dir%"]
+
+dir = "~/.cargo"
+pre = [["", "du", "-hs", ":%dir%"]]
+post = [["test", "!", "-d", ":%dir%"]]
+
+description = "Remove the ~/.cargo directory"

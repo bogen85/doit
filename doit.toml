@@ -8,13 +8,6 @@ command = ["cargo", "install",  "--path",  "."]
 post = [["cp", "-fav", ":~/.cargo/%exe%", ":~/%exe%"],
         ["cp", "-fav", ":~/.cargo/%exe%", ":%cargo-do%"]]
 
-[clear-dot-cargo]
-command = ["rm", "-rf", ":%dir%"]
-
-dir = "~/.cargo"
-pre = [["", "du", "-hs", ":%dir%"]]
-post = [["test", "!", "-d", ":%dir%"]]
-
 [whoami]
 command = ["echo", ":%env:USER%"]
 
