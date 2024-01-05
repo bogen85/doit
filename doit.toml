@@ -28,3 +28,6 @@ command = "/NONE"
 [fail4]
 command = ["/NONE"]
 boo = [":boo", "cow"]
+
+[test0]
+command = ["&write-file"]

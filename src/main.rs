@@ -5,7 +5,7 @@ use once_cell::sync::Lazy;
 use regex::Regex;
 use std::{
   env,
-  fs::{write, File},
+  fs::{write as write_file, File},
   io::Read,
   path::Path,
   process::{exit, Command},
@@ -113,7 +113,7 @@ fn render_template(table: &Table, template: &str) -> Result<String, String> {
     match table.get(key) {
       None => push_error(format!("(Unknown table key: {})", key)),
       Some(value) => match value.as_str() {
-        Some(str_value) => format!("{}", str_value),
+        Some(str_value) => str_value.to_string(),
         None => push_error(format!("(Failed to convert value to string for key: {})", key)),
       },
     }
@@ -138,21 +138,32 @@ fn render_template(table: &Table, template: &str) -> Result<String, String> {
   Ok(x5.replace(&ASCII_SUB1, "%"))
 }
 
+fn run_builtin(cmd: &str, args: &[String]) -> Result<(), String> {
+  println!("builtin: {}: {:?}", cmd, args);
+  match cmd {
+    "write-file" => {
+      let data = "some content";
+      write_file("some-file", data).expect("Unable to write file");
+      Ok(())
+    }
+    _ => Err(format!("{} is not a known builtin.", cmd)),
+  }
+}
+
 fn run_cmd(args: Vec<String>) -> Result<(), String> {
   if args.is_empty() || &args[0] == "#" {
     return Ok(());
   }
 
-  let ignore_rc = args[0].is_empty();
+  let ignore_rc = args[0] == "-rc";
   if ignore_rc && (args.len() == 1) {
     return Ok(());
   }
 
   let (cmd, argv) = if ignore_rc { (&args[1], &args[2..]) } else { (&args[0], &args[1..]) };
 
-  match cmd {
-    //let data = "some content";
-    //std::fs::write("some-file", data).expect("Unable to write file");
+  match cmd.as_str() {
+    cmd if cmd.starts_with("&") => run_builtin(&cmd[1..], argv),
     _ => {
       let mut child = Command::new(cmd).args(argv).spawn().map_err(|e| e.to_string())?;
       let exit_status = child.wait();
@@ -215,25 +226,6 @@ fn process_pre_post_cmd(which: &str, cmd_name: &str, table: &Table) -> Result<()
   }
   Ok(())
 }
-/*
-fn get_command<'a>(cmd_name: &str, table: &'a Table) -> Result<&'a Array, String> {
-  Ok(
-    match match table.get("command") {
-      Some(argv) => argv,
-      None => {
-        return Err(format!("{}: missing command array", cmd_name));
-      }
-    }
-    .as_array()
-    {
-      Some(argv) => argv,
-      None => {
-        return Err(format!("{}: command is not an array", cmd_name));
-      }
-    },
-  )
-}
-*/
 
 fn get_command<'a>(cmd_name: &str, table: &'a Table) -> Result<&'a Array, String> {
   table
