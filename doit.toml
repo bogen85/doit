@@ -12,7 +12,7 @@ post = [["cp", "-fav", ":~/.cargo/%exe%", ":~/%exe%"],
 command = ["rm", "-rf", ":%dir%"]
 
 dir = "~/.cargo"
-pre = [["+du", "-hs", ":%dir%"]]
+pre = [["", "du", "-hs", ":%dir%"]]
 post = [["test", "!", "-d", ":%dir%"]]
 
 [whoami]

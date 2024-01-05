@@ -46,6 +46,10 @@ fn get_section<'a>(doc: &'a Document, name: &'a str) -> Result<Option<&'a Table>
 }
 
 fn render_template(table: &Table, template: &str) -> Result<String, String> {
+  if template.is_empty() {
+    return Ok(template.to_string());
+  }
+
   let x1 = {
     match &template[..1] {
       ":" => {
@@ -111,16 +115,25 @@ fn render_template(table: &Table, template: &str) -> Result<String, String> {
 }
 
 fn run_cmd(args: Vec<String>) -> Result<(), String> {
-  let ignore_rc = &args[0][..1] == "+";
+  if args.is_empty() || &args[0] == "#" {
+    return Ok(());
+  }
+
+  let ignore_rc = args[0].is_empty();
+  if ignore_rc && (args.len() == 1) {
+    return Ok(());
+  }
+
   let exit_status = {
-    let exe = if ignore_rc { &args[0][1..] } else { &args[0] };
-    let mut child =
-      Command::new(exe).args(&args[1..]).spawn().expect(&format!("Failed to execute command: {:?}", args));
+    let (exe, argv) = if ignore_rc { (&args[1], &args[2..]) } else { (&args[0], &args[1..]) };
+    let mut child = Command::new(exe).args(argv).spawn().expect(&format!("Failed to execute command: {:?}", args));
     child.wait()
   };
+
   if ignore_rc {
     return Ok(());
   }
+
   let rc = exit_status.expect("RC").code().unwrap_or(1);
   if rc != 0 {
     Err(format!("{:?}\nfailed with exit status: {}", args, rc))
