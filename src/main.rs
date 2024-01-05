@@ -47,22 +47,17 @@ fn get_section<'a>(doc: &'a Document, name: &'a str) -> Result<Option<&'a Table>
 
 fn render_template(table: &Table, template: &str) -> Result<String, String> {
   let x1 = {
-    let x0 = {
-      if !template.starts_with(":") || template.is_empty() {
-        return Ok(template.to_string());
+    match &template[..1] {
+      ":" => {
+        let x0 = &template[1..];
+        if x0.is_empty() {
+          return Ok(x0.to_string());
+        }
+        x0
       }
-      let x = &template[1..];
-      if x.is_empty() {
-        return Ok(x.to_string());
-      }
-      x
+      _ => return Ok(template.to_string()),
     }
-    .replace("%%", &ASCII_SUB1);
-
-    if x0.is_empty() {
-      return Ok(x0);
-    }
-    x0
+    .replace("%%", &ASCII_SUB1)
   };
 
   let x2 = ENV0_RE.replace_all(&x1, |caps: &regex::Captures| {
