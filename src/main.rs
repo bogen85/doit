@@ -36,7 +36,7 @@ fn read_doit_file() -> Result<Document, String> {
 
     format!("{}{}", DEFAULT_COMMANDS, contents)
   } else {
-    DEFAULT_COMMANDS.to_string()
+    DEFAULT_COMMANDS.into()
   };
   Ok(full_contents.parse::<Document>().map_err(|e| e.to_string())?)
 }
@@ -51,7 +51,7 @@ fn get_section<'a>(doc: &'a Document, name: &'a str) -> Result<(Option<&'a Table
           .iter()
           .nth(caps.get(1).ok_or("RE failed")?.as_str().parse::<usize>().ok().ok_or("INDEX")? - 1)
           .and_then(|(key, section)| {
-            actual_key = key.to_string();
+            actual_key = key.into();
             section.as_table()
           }),
         actual_key,
@@ -59,7 +59,7 @@ fn get_section<'a>(doc: &'a Document, name: &'a str) -> Result<(Option<&'a Table
     })
   } else {
     if doc.contains_key(name) {
-      Ok((doc[name].as_table(), name.to_string()))
+      Ok((doc[name].as_table(), name.into()))
     } else {
       Err(format!("{} not found in the {}", name, DOIT_FILE))
     }
@@ -68,7 +68,7 @@ fn get_section<'a>(doc: &'a Document, name: &'a str) -> Result<(Option<&'a Table
 
 fn render_template(table: &Table, template: &str) -> Result<String, String> {
   if template.is_empty() {
-    return Ok(template.to_string());
+    return Ok(template.into());
   }
 
   let x1 = {
@@ -76,11 +76,11 @@ fn render_template(table: &Table, template: &str) -> Result<String, String> {
       ":" => {
         let x0 = &template[1..];
         if x0.is_empty() {
-          return Ok(x0.to_string());
+          return Ok(x0.into());
         }
         x0
       }
-      _ => return Ok(template.to_string()),
+      _ => return Ok(template.into()),
     }
     .replace("%%", &ASCII_SUB1)
   };
@@ -89,7 +89,7 @@ fn render_template(table: &Table, template: &str) -> Result<String, String> {
     let evar = &caps[1];
     match env::var(&evar) {
       Ok(value) => value,
-      Err(_) => caps[2].to_string(),
+      Err(_) => caps[2].into(),
     }
   });
 
@@ -113,7 +113,7 @@ fn render_template(table: &Table, template: &str) -> Result<String, String> {
     match table.get(key) {
       None => push_error(format!("(Unknown table key: {})", key)),
       Some(value) => match value.as_str() {
-        Some(str_value) => str_value.to_string(),
+        Some(str_value) => str_value.into(),
         None => push_error(format!("(Failed to convert value to string for key: {})", key)),
       },
     }
@@ -139,7 +139,7 @@ fn render_template(table: &Table, template: &str) -> Result<String, String> {
 }
 
 fn run_builtin(cmd: &str, args: &[String]) -> Result<(), String> {
-  println!("builtin: {}: {:?}", cmd, args);
+  eprintln!("builtin: {}: {:?}", cmd, args);
   match cmd {
     "write-file" => {
       let data = "some content";
@@ -304,7 +304,7 @@ fn show_details(cmd_name: &str) -> Result<(), String> {
             Ok(s) => s,
             Err(e) => {
               errors.push(format!("{}", e));
-              "????".to_string()
+              "????".into()
             }
           })
           .collect::<Vec<_>>()

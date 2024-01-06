@@ -87,7 +87,7 @@ checksum = ""
 
 [[package]]
 name = "memchr"
-version = "2.6.4"
+version = "2.7.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = ""
 
@@ -167,7 +167,7 @@ dependencies = [
 
 [[package]]
 name = "winnow"
-version = "0.5.19"
+version = "0.5.31"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = ""
 dependencies = [

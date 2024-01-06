@@ -1,7 +1,13 @@
 [source]
 
 [source.system-wide-registry]
-directory = "/usr/share/cargo/registry"
+directory = "/home/cargo/registry"
 
 [source.crates-io]
 replace-with = "system-wide-registry"
+
+[target.x86_64-unknown-linux-gnu]
+rustflags = ["-C", "target-feature=+crt-static"]
+
+[target.x86_64-alpine-linux-musl]
+rustflags = ["-C", "target-feature=+crt-static"]
